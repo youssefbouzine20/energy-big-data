@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SmartMeterReading",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "meter_id",
+    "timestamp",
+    "zone",
+    "consumption_kwh",
+    "voltage_v",
+    "frequency_hz",
+    "power_factor",
+    "is_anomaly",
+    "anomaly_reason",
+    "hour_of_day",
+    "day_of_week",
+    "is_peak_hour",
+    "zone_lat",
+    "zone_lon"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "meter_id": {
+      "type": "string",
+      "pattern": "^SM-[0-9]{3}$",
+      "description": "Unique meter ID e.g. SM-001"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "zone": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D"]
+    },
+    "consumption_kwh": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 0.12,
+      "description": "ML target variable — energy consumed this interval"
+    },
+    "voltage_v": {
+      "type": "number",
+      "minimum": 210.0,
+      "maximum": 250.0,
+      "description": "Grid voltage — feature for anomaly detection"
+    },
+    "frequency_hz": {
+      "type": "number",
+      "minimum": 48.0,
+      "maximum": 52.0,
+      "description": "Grid frequency — deviations signal instability"
+    },
+    "power_factor": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Efficiency ratio — low PF = wasted energy"
+    },
+    "is_anomaly": {
+      "type": "boolean",
+      "description": "Classification label for ML anomaly detection"
+    },
+    "anomaly_reason": {
+      "type": ["string", "null"],
+      "enum": ["VOLTAGE_LOW", "VOLTAGE_HIGH", "OVERCONSUMPTION", "FREQUENCY_DEVIATION", null],
+      "description": "Why anomaly was flagged — null if is_anomaly=false"
+    },
+    "hour_of_day": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23,
+      "description": "UTC hour — consistent with timestamp field"
+    },
+    "day_of_week": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6,
+      "description": "0=Monday, 6=Sunday (Python weekday() convention)"
+    },
+    "is_peak_hour": {
+      "type": "boolean",
+      "description": "True during morning (07-09 UTC) or evening peak (17-21 UTC)"
+    },
+    "zone_lat": {
+      "type": "number",
+      "description": "Zone center latitude (Tétouan) — enables geographic heatmap"
+    },
+    "zone_lon": {
+      "type": "number",
+      "description": "Zone center longitude (Tétouan) — enables geographic heatmap"
+    }
+  },
+  "additionalProperties": false
+}

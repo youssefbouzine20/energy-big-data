@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WeatherReading",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "station_id",
+    "timestamp",
+    "temperature_c",
+    "feels_like_c",
+    "humidity_pct",
+    "solar_irradiance_wm2",
+    "wind_speed_ms",
+    "weather_severity"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "station_id": {
+      "type": "string",
+      "pattern": "^WS-[A-Z]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "temperature_c": {
+      "type": "number",
+      "minimum": -10.0,
+      "maximum": 50.0,
+      "description": "Actual temperature — ML feature"
+    },
+    "feels_like_c": {
+      "type": "number",
+      "minimum": -15.0,
+      "maximum": 55.0,
+      "description": "Perceived temperature — stronger ML feature than raw temp"
+    },
+    "humidity_pct": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 100.0,
+      "description": "Affects feels_like and AC usage"
+    },
+    "solar_irradiance_wm2": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1000.0,
+      "description": "Combined effect of sun + clouds — replaces redundant cloud_cover"
+    },
+    "wind_speed_ms": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 50.0
+    },
+    "weather_severity": {
+      "type": "string",
+      "enum": ["NORMAL", "HOT", "COLD", "STORM", "EXTREME"],
+      "description": "Categorical feature for ML — easier than raw thresholds"
+    }
+  },
+  "additionalProperties": false
+}
