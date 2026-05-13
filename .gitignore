@@ -216,3 +216,26 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# Docker
+docker/data/
+docker/logs/
+
+# Kafka logs
+kafka-logs/
+kafka-data/
+
+# ML models (large files)
+ml/models/*.pkl
+ml/models/*.h5
+
+# MongoDB data
+storage/data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+.weather_state.json
