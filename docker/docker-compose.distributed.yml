@@ -138,6 +138,60 @@ services:
     networks:
       - energy-net
 
+  # ── Schema Registry ────────────────────────────────────────────────────────
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    container_name: schema-registry-dist
+    restart: on-failure
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+    ports:
+      - "${SCHEMA_REGISTRY_PORT:-8081}:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka1:29092,PLAINTEXT://kafka2:29092,PLAINTEXT://kafka3:29092
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 3
+    volumes:
+      - schema-registry-dist-data:/var/lib/schema-registry
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/subjects || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - energy-net
+
+  # ── Kafka UI (Provectus) ───────────────────────────────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui-dist
+    restart: on-failure
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_UI_PORT:-8090}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: energy-distributed
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - energy-net
+
   # ── MongoDB ────────────────────────────────────────────────────────────────
   mongodb:
     image: mongo:7.0
@@ -234,4 +288,6 @@ volumes:
   kafka3-dist-data:
     driver: local
   mongo-dist-data:
+    driver: local
+  schema-registry-dist-data:
     driver: local

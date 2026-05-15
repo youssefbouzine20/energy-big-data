@@ -5,8 +5,10 @@
 ## Architecture
 
 ```
-Python Producers ──► Kafka (KRaft, 3 topics)
+Python Producers ──► Kafka (KRaft, 3 topics) ◄──► Schema Registry
+                          │                       (Confluent)
                           │
+                          │              ◄── Kafka UI (Provectus)
                           ▼
                Spark Structured Streaming
                (15-min windows, NLP)
@@ -29,6 +31,8 @@ Python Producers ──► Kafka (KRaft, 3 topics)
 | Apache Spark | 3.5.0 | Structured Streaming |
 | MongoDB | 7.0 | NoSQL sink |
 | Streamlit | 1.35.0 | Real-time dashboard |
+| Confluent Schema Registry | 7.5.0 | Central JSON schema catalog |
+| Kafka UI (Provectus) | latest | Web UI for topics + messages + schemas |
 | Docker | Desktop | All services containerized |
 
 ## Prerequisites
@@ -150,6 +154,37 @@ source .venv/bin/activate && python -m ingestion.consumers.verify_topics
 ```
 
 Press Ctrl-C to stop. A per-topic message count summary is printed on shutdown.
+
+### Kafka UI & Schema Registry
+
+After `docker compose up`, these web UIs are available on the host:
+
+| Service | URL | Purpose |
+|---|---|---|
+| **Kafka UI** | http://localhost:8090 | Browse topics, messages, consumer groups, partitions, schemas |
+| **Schema Registry** | http://localhost:8081 | REST API for schemas (`/subjects` lists registered schemas) |
+| Spark Master UI | http://localhost:8080 | Spark cluster status (when Spark jobs run) |
+| Streamlit | http://localhost:8501 | P4 dashboard (when running) |
+
+### Register schemas with Schema Registry (one-time after startup)
+
+```powershell
+# Windows
+.venv\Scripts\python -m ingestion.schemas.register_schemas
+```
+```bash
+# WSL / Linux
+source .venv/bin/activate && python -m ingestion.schemas.register_schemas
+```
+
+Expected output:
+```
+[OK]    smart-meters-value             id=1
+[OK]    weather-value                  id=2
+[OK]    incident-reports-value         id=3
+```
+
+Re-running is safe — it only registers a new version if the schema changed.
 
 ## Team
 
