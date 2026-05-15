@@ -239,3 +239,6 @@ Thumbs.db
 
 
 .weather_state.json
+
+# Local tooling cache (regenerated, never commit)
+.claude/
