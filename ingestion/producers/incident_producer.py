@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import jsonschema
-from confluent_kafka import Producer
+from confluent_kafka import KafkaException, Producer
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from config.kafka_config import PRODUCER_CONFIG, TOPIC_INCIDENTS, INCIDENT_INTERVAL
+from config.kafka_config import (
+    PRODUCER_CONFIG, TOPIC_INCIDENTS, INCIDENT_INTERVAL, NUM_METERS
+)
 from producers.shared_state import get_weather
 
 # ── Schema ────────────────────────────────────────────────────────────────────
@@ -41,7 +43,8 @@ DURATION_BY_SEVERITY = {
     "CRITICAL": (60, 480),
 }
 
-ALL_METERS = [f"SM-{i:03d}" for i in range(1, 21)]
+ALL_METERS = [f"SM-{i:03d}" for i in range(1, NUM_METERS + 1)]
+MAX_AFFECTED = min(5, len(ALL_METERS))
 
 # ── Counter ───────────────────────────────────────────────────────────────────
 _counter     = 0
@@ -75,7 +78,7 @@ def build_message() -> dict:
         "VOLTAGE_DROP", "VOLTAGE_SURGE", "POWER_OUTAGE",
         "OVERLOAD", "EQUIPMENT_FAILURE", "GRID_FAULT"
     ])
-    affected    = random.sample(ALL_METERS, random.randint(1, 5))
+    affected    = random.sample(ALL_METERS, random.randint(1, MAX_AFFECTED))
     duration    = random.randint(*DURATION_BY_SEVERITY[severity])
     description = random.choice(TEMPLATES).format(
         zone     = zone,
@@ -100,16 +103,33 @@ def build_message() -> dict:
     jsonschema.validate(instance=msg, schema=SCHEMA)
     return msg
 
+# ── Metrics ───────────────────────────────────────────────────────────────────
+_sent_count  = 0
+_error_count = 0
+_start_time  = time.time()
+
+
 # ── Delivery callback ─────────────────────────────────────────────────────────
 def on_delivery(err, msg):
+    global _sent_count, _error_count
     if err:
+        _error_count += 1
         print(f"[ERROR] {msg.topic()} | {err}")
     else:
-        print(f"[OK] {msg.topic()} | partition={msg.partition()}")
+        _sent_count += 1
+
+
+def print_metrics():
+    elapsed_min = (time.time() - _start_time) / 60
+    rate = _sent_count / elapsed_min if elapsed_min > 0 else 0
+    print(f"[METRICS] sent={_sent_count} errors={_error_count} "
+          f"rate={rate:.1f}/min uptime={elapsed_min:.1f}m")
+
 
 # ── Graceful shutdown ─────────────────────────────────────────────────────────
 producer = Producer(PRODUCER_CONFIG)
 running  = True
+_cycle   = 0
 
 def shutdown(sig, frame):
     global running
@@ -122,7 +142,10 @@ signal.signal(signal.SIGTERM, shutdown)
 print(f"[INFO] Incident producer — interval={INCIDENT_INTERVAL}s")
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
+_backoff = 1
+
 while running:
+    _cycle += 1
     try:
         msg = build_message()
         producer.produce(
@@ -131,16 +154,29 @@ while running:
             value    = json.dumps(msg),
             callback = on_delivery,
         )
+        producer.poll(0)
+        _backoff = 1
         print(f"  → {msg['incident_id']} | zone={msg['zone']} | "
               f"{msg['severity']} | {msg['type']} | "
               f"duration={msg['estimated_duration_min']}min")
-        producer.flush()
+        producer.flush(timeout=5)
+    except BufferError:
+        producer.poll(1)
+    except KafkaException as e:
+        _error_count += 1
+        print(f"[KAFKA ERROR] {e} — backoff {_backoff}s")
+        time.sleep(_backoff)
+        _backoff = min(_backoff * 2, 30)
     except jsonschema.ValidationError as e:
         print(f"[SCHEMA ERROR] {e.message}")
     except Exception as e:
         print(f"[ERROR] {e}")
 
+    if _cycle % 10 == 0:
+        print_metrics()
+
     time.sleep(INCIDENT_INTERVAL)
 
-producer.flush()
+producer.flush(timeout=5)
+print_metrics()
 print("[INFO] Producer stopped.")

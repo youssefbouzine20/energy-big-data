@@ -83,6 +83,12 @@ KAFKA_BOOTSTRAP_SERVERS=kafka1:29092,kafka2:29092,kafka3:29092
 KAFKA_REPLICATION_FACTOR=3
 ```
 
+> **Note on distributed mode:** This compose file runs 3 Kafka brokers as
+> separate Docker containers on a single host, demonstrating the RF=3 /
+> MIN_ISR=2 configuration and broker quorum behavior. For a true multi-node
+> deployment, each broker would run on a separate physical machine with the
+> `KAFKA_ADVERTISED_LISTENERS` updated to the host's reachable IP.
+
 ## Kafka Topics
 
 | Topic | Partitions | Interval | Description |
@@ -117,6 +123,16 @@ docker exec kafka-local kafka-run-class kafka.tools.GetOffsetShell \
 docker exec kafka-local kafka-console-consumer \
   --bootstrap-server localhost:9092 --topic smart-meters --max-messages 5
 ```
+
+### Live Consumer Verification
+
+Subscribe to all 3 topics and watch messages flow in real time:
+
+```powershell
+.venv\Scripts\python -m ingestion.consumers.verify_topics
+```
+
+Press Ctrl-C to stop. A per-topic message count summary is printed on shutdown.
 
 ## Team
 
