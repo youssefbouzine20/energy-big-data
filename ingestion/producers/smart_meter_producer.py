@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import jsonschema
-from confluent_kafka import Producer
+from confluent_kafka import KafkaException, Producer
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from config.kafka_config import (
@@ -22,12 +22,14 @@ with open(SCHEMA_PATH) as f:
 
 # ── Meter setup ───────────────────────────────────────────────────────────────
 METERS = [f"SM-{i:03d}" for i in range(1, NUM_METERS + 1)]
-ZONES = {
-    **{f"SM-{i:03d}": "A" for i in range(1,  6)},
-    **{f"SM-{i:03d}": "B" for i in range(6,  11)},
-    **{f"SM-{i:03d}": "C" for i in range(11, 16)},
-    **{f"SM-{i:03d}": "D" for i in range(16, 21)},
-}
+
+
+def assign_zone(idx: int, total: int) -> str:
+    # Round-robin meters across 4 zones (A/B/C/D) regardless of NUM_METERS
+    return ["A", "B", "C", "D"][(idx - 1) * 4 // total]
+
+
+ZONES = {f"SM-{i:03d}": assign_zone(i, NUM_METERS) for i in range(1, NUM_METERS + 1)}
 
 # ── Meter personality (fixed seed for reproducibility) ────────────────────────
 random.seed(42)
@@ -47,6 +49,9 @@ ZONE_COORDS = {
 
 # ── State ─────────────────────────────────────────────────────────────────────
 _message_count = 0
+_sent_count    = 0
+_error_count   = 0
+_start_time    = time.time()
 previous_consumption = {
     m: round(0.015 * METER_PROFILE[m], 4) for m in METERS
 }
@@ -131,10 +136,19 @@ def build_message(meter_id: str, previous: float, frequency: float,
 
 # ── Delivery callback ─────────────────────────────────────────────────────────
 def on_delivery(err, msg):
+    global _sent_count, _error_count
     if err:
+        _error_count += 1
         print(f"[ERROR] {msg.topic()} | {err}")
     else:
-        print(f"[OK] {msg.topic()} | partition={msg.partition()} | {msg.key().decode()}")
+        _sent_count += 1
+
+
+def print_metrics():
+    elapsed_min = (time.time() - _start_time) / 60
+    rate = _sent_count / elapsed_min if elapsed_min > 0 else 0
+    print(f"[METRICS] sent={_sent_count} errors={_error_count} "
+          f"rate={rate:.1f}/min uptime={elapsed_min:.1f}m")
 
 # ── Graceful shutdown ─────────────────────────────────────────────────────────
 producer = Producer(PRODUCER_CONFIG)
@@ -152,6 +166,8 @@ print(f"[INFO] Smart meter producer — {NUM_METERS} meters, interval={PRODUCER_
 print(f"[INFO] Meter profiles: {METER_PROFILE}")
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
+_backoff = 1
+
 while running:
     _message_count   += 1
     force             = (_message_count % 15 == 0)
@@ -173,15 +189,32 @@ while running:
                 value    = json.dumps(msg),
                 callback = on_delivery,
             )
+            producer.poll(0)  # serve delivery callbacks
+            _backoff = 1
             print(f"  → {meter_id} | {msg['consumption_kwh']} kWh | "
                   f"freq={current_frequency}Hz | anomaly={msg['anomaly_reason']}")
+        except BufferError:
+            producer.poll(1)  # local queue full — drain
+        except KafkaException as e:
+            _error_count += 1
+            print(f"[KAFKA ERROR] {meter_id}: {e} — backoff {_backoff}s")
+            time.sleep(_backoff)
+            _backoff = min(_backoff * 2, 30)
         except jsonschema.ValidationError as e:
             print(f"[SCHEMA ERROR] {meter_id}: {e.message}")
         except Exception as e:
             print(f"[ERROR] {meter_id}: {e}")
 
-    producer.flush()
+    try:
+        producer.flush(timeout=5)
+    except KafkaException as e:
+        print(f"[KAFKA ERROR] flush failed: {e}")
+
+    if _message_count % 10 == 0:
+        print_metrics()
+
     time.sleep(PRODUCER_INTERVAL)
 
-producer.flush()
+producer.flush(timeout=5)
+print_metrics()
 print("[INFO] Producer stopped.")

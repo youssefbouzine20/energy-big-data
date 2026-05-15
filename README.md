@@ -36,7 +36,7 @@ Python Producers ──► Kafka (KRaft, 3 topics)
 - Docker Desktop running
 - Python 3.10.11 installed
 - Virtual environment created: `python -m venv .venv`
-- Dependencies installed: `.venv\Scripts\pip install -r requirements.txt`
+- Dependencies installed: `.venv/bin/pip install --default-timeout=100 -r requirements.txt`
 
 ## Quick Start
 
@@ -62,6 +62,17 @@ docker compose -f docker/docker-compose.local.yml --env-file .env up -d
 .venv\Scripts\python -m ingestion.producers.incident_producer     # terminal 3
 ```
 
+**WSL / Linux:**
+
+```bash
+docker compose -f docker/docker-compose.local.yml --env-file .env up -d
+
+source .venv/bin/activate
+python -m ingestion.producers.weather_producer      # terminal 1
+python -m ingestion.producers.smart_meter_producer  # terminal 2
+python -m ingestion.producers.incident_producer     # terminal 3
+```
+
 ### 3. Pseudo-Distributed Mode (data persists across restarts)
 
 ```powershell
@@ -82,6 +93,12 @@ Update `.env`:
 KAFKA_BOOTSTRAP_SERVERS=kafka1:29092,kafka2:29092,kafka3:29092
 KAFKA_REPLICATION_FACTOR=3
 ```
+
+> **Note on distributed mode:** This compose file runs 3 Kafka brokers as
+> separate Docker containers on a single host, demonstrating the RF=3 /
+> MIN_ISR=2 configuration and broker quorum behavior. For a true multi-node
+> deployment, each broker would run on a separate physical machine with the
+> `KAFKA_ADVERTISED_LISTENERS` updated to the host's reachable IP.
 
 ## Kafka Topics
 
@@ -117,6 +134,22 @@ docker exec kafka-local kafka-run-class kafka.tools.GetOffsetShell \
 docker exec kafka-local kafka-console-consumer \
   --bootstrap-server localhost:9092 --topic smart-meters --max-messages 5
 ```
+
+### Live Consumer Verification
+
+Subscribe to all 3 topics and watch messages flow in real time:
+
+**Windows:**
+```powershell
+.venv\Scripts\python -m ingestion.consumers.verify_topics
+```
+
+**WSL / Linux:**
+```bash
+source .venv/bin/activate && python -m ingestion.consumers.verify_topics
+```
+
+Press Ctrl-C to stop. A per-topic message count summary is printed on shutdown.
 
 ## Team
 

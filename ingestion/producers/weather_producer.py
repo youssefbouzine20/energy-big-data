@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import jsonschema
-from confluent_kafka import Producer
+from confluent_kafka import KafkaException, Producer
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from config.kafka_config import PRODUCER_CONFIG, TOPIC_WEATHER, PRODUCER_INTERVAL
@@ -79,17 +79,34 @@ def build_message(prev_wind: float) -> tuple[dict, float]:
     jsonschema.validate(instance=msg, schema=SCHEMA)
     return msg, wind
 
+# ── Metrics ───────────────────────────────────────────────────────────────────
+_sent_count  = 0
+_error_count = 0
+_start_time  = time.time()
+
+
 # ── Delivery callback ─────────────────────────────────────────────────────────
 def on_delivery(err, msg):
+    global _sent_count, _error_count
     if err:
+        _error_count += 1
         print(f"[ERROR] {msg.topic()} | {err}")
     else:
-        print(f"[OK] {msg.topic()} | partition={msg.partition()}")
+        _sent_count += 1
+
+
+def print_metrics():
+    elapsed_min = (time.time() - _start_time) / 60
+    rate = _sent_count / elapsed_min if elapsed_min > 0 else 0
+    print(f"[METRICS] sent={_sent_count} errors={_error_count} "
+          f"rate={rate:.1f}/min uptime={elapsed_min:.1f}m")
+
 
 # ── Graceful shutdown ─────────────────────────────────────────────────────────
 producer = Producer(PRODUCER_CONFIG)
 running  = True
 wind     = 3.0
+_cycle   = 0
 
 def shutdown(sig, frame):
     global running
@@ -102,7 +119,10 @@ signal.signal(signal.SIGTERM, shutdown)
 print(f"[INFO] Weather producer — interval={PRODUCER_INTERVAL}s")
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
+_backoff = 1
+
 while running:
+    _cycle += 1
     try:
         msg, wind = build_message(wind)
         set_weather(msg["weather_severity"], msg["temperature_c"])
@@ -112,17 +132,30 @@ while running:
             value    = json.dumps(msg),
             callback = on_delivery,
         )
+        producer.poll(0)
+        _backoff = 1
         print(f"  → temp={msg['temperature_c']}°C | "
               f"feels={msg['feels_like_c']}°C | "
               f"irr={msg['solar_irradiance_wm2']}W/m² | "
               f"severity={msg['weather_severity']}")
-        producer.flush()
+        producer.flush(timeout=5)
+    except BufferError:
+        producer.poll(1)
+    except KafkaException as e:
+        _error_count += 1
+        print(f"[KAFKA ERROR] {e} — backoff {_backoff}s")
+        time.sleep(_backoff)
+        _backoff = min(_backoff * 2, 30)
     except jsonschema.ValidationError as e:
         print(f"[SCHEMA ERROR] {e.message}")
     except Exception as e:
         print(f"[ERROR] {e}")
 
+    if _cycle % 10 == 0:
+        print_metrics()
+
     time.sleep(PRODUCER_INTERVAL)
 
-producer.flush()
+producer.flush(timeout=5)
+print_metrics()
 print("[INFO] Producer stopped.")
