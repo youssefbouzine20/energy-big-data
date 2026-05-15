@@ -60,10 +60,13 @@ docker run --rm confluentinc/cp-kafka:7.5.0 kafka-storage random-uuid
 # Start infrastructure
 docker compose -f docker/docker-compose.local.yml --env-file .env up -d
 
-# Start producers (3 separate terminals, from project root)
-.venv\Scripts\python -m ingestion.producers.weather_producer      # terminal 1
-.venv\Scripts\python -m ingestion.producers.smart_meter_producer  # terminal 2
-.venv\Scripts\python -m ingestion.producers.incident_producer     # terminal 3
+# Start all 6 producers (6 separate terminals, from project root)
+.venv\Scripts\python -m ingestion.producers.weather_producer          # terminal 1
+.venv\Scripts\python -m ingestion.producers.smart_meter_producer      # terminal 2
+.venv\Scripts\python -m ingestion.producers.incident_producer         # terminal 3
+.venv\Scripts\python -m ingestion.producers.rss_producer              # terminal 4
+.venv\Scripts\python -m ingestion.producers.market_price_producer     # terminal 5
+.venv\Scripts\python -m ingestion.producers.user_feedback_producer    # terminal 6
 ```
 
 **WSL / Linux:**
@@ -72,9 +75,12 @@ docker compose -f docker/docker-compose.local.yml --env-file .env up -d
 docker compose -f docker/docker-compose.local.yml --env-file .env up -d
 
 source .venv/bin/activate
-python -m ingestion.producers.weather_producer      # terminal 1
-python -m ingestion.producers.smart_meter_producer  # terminal 2
-python -m ingestion.producers.incident_producer     # terminal 3
+python -m ingestion.producers.weather_producer          # terminal 1
+python -m ingestion.producers.smart_meter_producer      # terminal 2
+python -m ingestion.producers.incident_producer         # terminal 3
+python -m ingestion.producers.rss_producer              # terminal 4
+python -m ingestion.producers.market_price_producer     # terminal 5
+python -m ingestion.producers.user_feedback_producer    # terminal 6
 ```
 
 ### 3. Pseudo-Distributed Mode (data persists across restarts)
@@ -104,13 +110,16 @@ KAFKA_REPLICATION_FACTOR=3
 > deployment, each broker would run on a separate physical machine with the
 > `KAFKA_ADVERTISED_LISTENERS` updated to the host's reachable IP.
 
-## Kafka Topics
+## Kafka Topics (6 total — covers all professor's Section A requirements)
 
-| Topic | Partitions | Interval | Description |
-|---|---|---|---|
-| `smart-meters` | 3 | 30s | 20 virtual meters, 4 zones (A/B/C/D) |
-| `weather` | 1 | 30s | WS-MAIN weather station (Tétouan climate) |
-| `incident-reports` | 1 | 60s | Grid incidents weighted by weather severity |
+| Topic | Partitions | Interval | Description | Spec section |
+|---|---|---|---|---|
+| `smart-meters` | 3 | 30s | Virtual smart meters (configurable `NUM_METERS`), 4 zones (A/B/C/D) | A.1 |
+| `weather` | 1 | 30s | WS-MAIN weather station (Tétouan climate: temp, humidity, irradiance, wind) | A.2 |
+| `incident-reports` | 1 | 60s | Grid incidents weighted by weather severity | feeds B.3 NLP |
+| `rss-feeds` | 1 | 120s | Industrial news RSS items (5 categories: news/regulation/market/renewable/infra) | A.3 |
+| `market-prices` | 1 | 3600s | Hourly energy market prices (MASEN/EU_SPOT/DAY_AHEAD), MAD + EUR/MWh | "facteurs externes (prix du marché)" |
+| `user-feedback` | 3 | 45s | User support feedback (4 channels, 4 categories, 3 sentiments) — biased by weather | feeds B.4 NLP |
 
 ## Smart Meter Features (per message)
 

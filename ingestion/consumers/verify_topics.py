@@ -8,10 +8,15 @@ from confluent_kafka import Consumer, KafkaError
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from config.kafka_config import (
-    CONSUMER_CONFIG, TOPIC_METERS, TOPIC_WEATHER, TOPIC_INCIDENTS
+    CONSUMER_CONFIG,
+    TOPIC_METERS, TOPIC_WEATHER, TOPIC_INCIDENTS,
+    TOPIC_RSS, TOPIC_PRICES, TOPIC_FEEDBACK,
 )
 
-TOPICS = [TOPIC_METERS, TOPIC_WEATHER, TOPIC_INCIDENTS]
+TOPICS = [
+    TOPIC_METERS, TOPIC_WEATHER, TOPIC_INCIDENTS,
+    TOPIC_RSS, TOPIC_PRICES, TOPIC_FEEDBACK,
+]
 
 config = {**CONSUMER_CONFIG, "group.id": "verify-topics", "auto.offset.reset": "latest"}
 consumer = Consumer(config)

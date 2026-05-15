@@ -46,7 +46,10 @@ services:
       "kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic smart-meters --partitions 3 --replication-factor 1 &&
        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic weather --partitions 1 --replication-factor 1 &&
        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic incident-reports --partitions 1 --replication-factor 1 &&
-       echo 'All topics created.'"]
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic rss-feeds --partitions 1 --replication-factor 1 &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic market-prices --partitions 1 --replication-factor 1 &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic user-feedback --partitions 3 --replication-factor 1 &&
+       echo 'All 6 topics created.'"]
     networks:
       - energy-net
 
