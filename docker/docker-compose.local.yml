@@ -129,6 +129,11 @@ services:
       - energy-net
 
   # ── Spark ──────────────────────────────────────────────────────────────────
+  # Project root mounted at /workspace so any teammate on any OS can run:
+  #   docker exec spark-master-local /opt/spark/bin/spark-submit \
+  #     --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
+  #     /workspace/processing/main.py
+  # Ivy cache volumed so the ~100 MB of JARs only downloads once per machine.
   spark-master:
     image: apache/spark:3.5.0
     container_name: spark-master-local
@@ -138,14 +143,34 @@ services:
     environment:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_MASTER_HOST: spark-master
+      # When Spark runs INSIDE the container, the Kafka and Mongo hostnames
+      # are the Docker service names, NOT localhost. These override the
+      # defaults baked into processing/spark_session.py.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MONGO_HOST: mongodb
+      MONGO_PORT: "27017"
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-energy_db}
+      MONGO_SPARK_USER: ${MONGO_USERNAME:-energy_admin}
+      MONGO_SPARK_PASS: ${MONGO_PASSWORD:-change-me-before-deploy}
+      NUM_METERS: ${NUM_METERS:-10}
+      SPARK_CHECKPOINT_DIR: /tmp/spark-checkpoints
     ports:
       - "8080:8080"
       - "7077:7077"
+    volumes:
+      - ..:/workspace:rw                          # project source visible inside container
+      - spark-ivy-cache:/root/.ivy2               # cache --packages downloads across runs
+      - spark-checkpoints:/tmp/spark-checkpoints  # persist Spark streaming state
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080 || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
     networks:
       - energy-net
 
@@ -157,8 +182,12 @@ services:
     command: ["/opt/spark/sbin/start-worker.sh", "spark://spark-master:7077"]
     environment:
       SPARK_NO_DAEMONIZE: "true"
-      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-1g}
-      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-1}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-2g}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
+    volumes:
+      - ..:/workspace:rw                          # worker needs the code too
+      - spark-ivy-cache:/root/.ivy2               # share Ivy cache with master
+      - spark-checkpoints:/tmp/spark-checkpoints
     depends_on:
       spark-master:
         condition: service_healthy
@@ -172,3 +201,7 @@ services:
 networks:
   energy-net:
     driver: bridge
+
+volumes:
+  spark-ivy-cache:
+  spark-checkpoints:

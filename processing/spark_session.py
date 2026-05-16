@@ -1,9 +1,14 @@
 import os
 from pyspark.sql import SparkSession
-from dotenv import load_dotenv
 
-# Charge explicitement le fichier .env dès l'import du module
-load_dotenv()
+# python-dotenv is present in the host venv but NOT inside the apache/spark
+# Docker image. When running in-container, env vars come from docker-compose's
+# `environment:` block, so dotenv is unnecessary. Skip gracefully if missing.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 def get_mongo_uri() -> str:
     """
