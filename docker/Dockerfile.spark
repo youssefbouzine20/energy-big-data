@@ -21,8 +21,8 @@ RUN pip install --no-cache-dir \
         "numpy<1.25" \
         "nltk>=3.8" \
         python-dotenv \
- && python -c "import nltk; nltk.download('vader_lexicon', download_dir='/opt/nltk_data')" \
- && python -c "import nltk; nltk.download('stopwords', download_dir='/opt/nltk_data')"
+ && python3 -c "import nltk; nltk.download('vader_lexicon', download_dir='/opt/nltk_data')" \
+ && python3 -c "import nltk; nltk.download('stopwords', download_dir='/opt/nltk_data')"
 
 # NLTK looks here at runtime
 ENV NLTK_DATA=/opt/nltk_data
