@@ -141,7 +141,7 @@ Paste the UUID after `KAFKA_CLUSTER_ID=` in `.env`. **Don't** change it later
 > ⚠️ **Security:** the `.env.example` ships `MONGO_PASSWORD=change-me-before-deploy`.
 > For local dev that's fine, but **rotate it** before any non-local
 > deployment. The MongoDB image starts WITHOUT authentication if these
-> values are blank.
+> values are blank.   ( admin123 )
 
 ### Step 3 — Start the infrastructure (local mode)
 
