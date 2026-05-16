@@ -135,7 +135,10 @@ services:
   #     /workspace/processing/main.py
   # Ivy cache volumed so the ~100 MB of JARs only downloads once per machine.
   spark-master:
-    image: apache/spark:3.5.0
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spark
+    image: energy/spark:3.5.0    # local tag — shared with spark-worker below
     container_name: spark-master-local
     restart: on-failure
     user: root
@@ -154,6 +157,9 @@ services:
       MONGO_SPARK_PASS: ${MONGO_PASSWORD:-change-me-before-deploy}
       NUM_METERS: ${NUM_METERS:-10}
       SPARK_CHECKPOINT_DIR: /tmp/spark-checkpoints
+      # Make /workspace importable as the top-level package root so
+      # `from processing.spark_session import ...` resolves correctly.
+      PYTHONPATH: /workspace
     ports:
       - "8080:8080"
       - "7077:7077"
@@ -175,7 +181,7 @@ services:
       - energy-net
 
   spark-worker:
-    image: apache/spark:3.5.0
+    image: energy/spark:3.5.0     # built by spark-master service above
     container_name: spark-worker-local
     restart: on-failure
     user: root

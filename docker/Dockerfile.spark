@@ -1,0 +1,27 @@
+# Custom Spark image with the Python deps P2's streams need.
+#
+# Why: apache/spark:3.5.0 ships only the bundled `pyspark` zip — it has NO
+# numpy (required by pyspark.ml.feature.Tokenizer/StopWordsRemover used in
+# streams_incidents.py + streams_feedback.py) and NO nltk (VADER sentiment
+# in streams_feedback.py).
+#
+# Build once per machine:
+#   docker compose -f docker/docker-compose.local.yml build
+# After that, every `docker compose up` uses the cached image.
+
+FROM apache/spark:3.5.0
+
+USER root
+
+# numpy        — required by pyspark.ml.feature
+# nltk         — required by streams_feedback.py for VADER sentiment
+# python-dotenv — lets processing/spark_session.py also work outside container
+RUN pip install --no-cache-dir \
+        numpy==1.26.4 \
+        nltk==3.8.1 \
+        python-dotenv==1.2.2 \
+ && python -c "import nltk; nltk.download('vader_lexicon', download_dir='/opt/nltk_data')" \
+ && python -c "import nltk; nltk.download('stopwords', download_dir='/opt/nltk_data')"
+
+# NLTK looks here at runtime
+ENV NLTK_DATA=/opt/nltk_data
