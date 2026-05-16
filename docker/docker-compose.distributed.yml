@@ -130,14 +130,17 @@ services:
         condition: service_healthy
       kafka3:
         condition: service_healthy
+    # Explicit retention + cleanup + compression + min.insync.replicas=2.
+    # min.insync.replicas=2 + acks=all = a write is acknowledged only after at
+    # least 2 of 3 brokers have it, surviving 1 broker loss with no data loss.
     entrypoint: ["/bin/bash", "-c",
-      "kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic smart-meters --partitions 3 --replication-factor 3 &&
-       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic weather --partitions 1 --replication-factor 3 &&
-       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic incident-reports --partitions 1 --replication-factor 3 &&
-       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic rss-feeds --partitions 1 --replication-factor 3 &&
-       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic market-prices --partitions 1 --replication-factor 3 &&
-       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic user-feedback --partitions 3 --replication-factor 3 &&
-       echo 'All 6 topics created with RF=3.'"]
+      "kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic smart-meters --partitions 3 --replication-factor 3 --config retention.ms=604800000 --config cleanup.policy=delete --config compression.type=snappy --config min.insync.replicas=2 &&
+       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic weather --partitions 1 --replication-factor 3 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy --config min.insync.replicas=2 &&
+       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic incident-reports --partitions 1 --replication-factor 3 --config retention.ms=7776000000 --config cleanup.policy=delete --config compression.type=snappy --config min.insync.replicas=2 &&
+       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic rss-feeds --partitions 1 --replication-factor 3 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy --config min.insync.replicas=2 &&
+       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic market-prices --partitions 1 --replication-factor 3 --config retention.ms=7776000000 --config cleanup.policy=delete --config compression.type=snappy --config min.insync.replicas=2 &&
+       kafka-topics --bootstrap-server kafka1:29092 --create --if-not-exists --topic user-feedback --partitions 3 --replication-factor 3 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy --config min.insync.replicas=2 &&
+       echo 'All 6 topics created with RF=3, MIN_ISR=2, snappy compression.'"]
     networks:
       - energy-net
 
@@ -196,6 +199,8 @@ services:
       - energy-net
 
   # ── MongoDB ────────────────────────────────────────────────────────────────
+  # init script in storage/init/ runs ONCE on first startup (when the volume
+  # is empty). To re-run: docker compose down -v (DESTROYS DATA).
   mongodb:
     image: mongo:7.0
     container_name: mongodb-dist
@@ -208,6 +213,7 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_DB_NAME}
     volumes:
       - mongo-dist-data:/data/db
+      - ../storage/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 15s

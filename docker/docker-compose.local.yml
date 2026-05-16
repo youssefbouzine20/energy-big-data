@@ -1,5 +1,9 @@
 # Run from project root: docker compose -f docker/docker-compose.local.yml --env-file .env up -d
 # Or from docker/ dir:   docker compose -f docker-compose.local.yml --env-file ../.env up -d
+# LOCAL MODE: ephemeral by design (no Kafka volume). Data is lost on container
+# stop — use pseudo or distributed mode for persistence.
+
+name: energy-local
 
 services:
 
@@ -31,6 +35,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
+      start_period: 30s
     networks:
       - energy-net
 
@@ -42,14 +47,18 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    # Explicit retention + cleanup + compression on every topic. Defaults are
+    # 7-day delete with no compression; making this explicit documents intent
+    # and prevents per-broker drift. Snappy compression cuts disk usage ~3x
+    # on JSON payloads with negligible CPU cost.
     entrypoint: ["/bin/bash", "-c",
-      "kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic smart-meters --partitions 3 --replication-factor 1 &&
-       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic weather --partitions 1 --replication-factor 1 &&
-       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic incident-reports --partitions 1 --replication-factor 1 &&
-       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic rss-feeds --partitions 1 --replication-factor 1 &&
-       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic market-prices --partitions 1 --replication-factor 1 &&
-       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic user-feedback --partitions 3 --replication-factor 1 &&
-       echo 'All 6 topics created.'"]
+      "kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic smart-meters --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic weather --partitions 1 --replication-factor 1 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic incident-reports --partitions 1 --replication-factor 1 --config retention.ms=7776000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic rss-feeds --partitions 1 --replication-factor 1 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic market-prices --partitions 1 --replication-factor 1 --config retention.ms=7776000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic user-feedback --partitions 3 --replication-factor 1 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       echo 'All 6 topics created with explicit retention + snappy compression.'"]
     networks:
       - energy-net
 
@@ -97,6 +106,8 @@ services:
       - energy-net
 
   # ── MongoDB ────────────────────────────────────────────────────────────────
+  # init script in storage/init/ runs ONCE on first startup (when /data/db is
+  # empty). Re-run by destroying the volume: docker compose down -v
   mongodb:
     image: mongo:7.0
     container_name: mongodb-local
@@ -107,6 +118,8 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
       MONGO_INITDB_DATABASE: ${MONGO_DB_NAME}
+    volumes:
+      - ../storage/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 15s

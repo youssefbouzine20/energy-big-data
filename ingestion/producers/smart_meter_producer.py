@@ -69,7 +69,11 @@ def get_voltage(force_anomaly: bool = False) -> float:
 def get_base_consumption(force_anomaly: bool = False) -> float:
     if force_anomaly:
         return random.uniform(0.046, 0.120)
-    hour = datetime.now().hour
+    # Use UTC consistently — the timestamp + hour_of_day fields stamped on the
+    # message are UTC, so the simulated peak pattern must use UTC too. Mixing
+    # local time here and UTC there shifted the apparent peak by 1 hour for
+    # Tetouan (UTC+1) and made `is_peak_hour` mis-aligned with consumption.
+    hour = datetime.now(timezone.utc).hour
     if   0  <= hour < 6:  return random.uniform(0.002, 0.008)
     elif 7  <= hour < 10: return random.uniform(0.030, 0.050)
     elif 10 <= hour < 17: return random.uniform(0.010, 0.030)

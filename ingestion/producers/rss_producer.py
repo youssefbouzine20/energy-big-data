@@ -92,14 +92,15 @@ TEMPLATES = {
 }
 
 # ── Counter for unique IDs ────────────────────────────────────────────────────
+# UTC dates so the ID date matches the message timestamp date.
 _counter = 0
-_counter_day = datetime.now().date()
+_counter_day = datetime.now(timezone.utc).date()
 
 
 def next_feed_id() -> str:
     """Generate a unique daily-sequential feed ID like RSS-20260515-001."""
     global _counter, _counter_day
-    today = datetime.now().date()
+    today = datetime.now(timezone.utc).date()
     if today != _counter_day:
         _counter = 0
         _counter_day = today
@@ -204,7 +205,7 @@ while running:
         _backoff = 1                  # reset backoff on success
         print(f"  -> {msg['feed_id']} | {msg['category']:<15} | "
               f"impact={msg['impact_score']} | {msg['title'][:60]}...")
-        producer.flush(timeout=5)
+        # No per-cycle flush — poll(0) services callbacks; final flush on shutdown.
     except BufferError:
         producer.poll(1)              # local queue full — wait for drain
     except KafkaException as e:

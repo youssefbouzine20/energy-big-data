@@ -14,19 +14,74 @@ Kafka (P1) ──► Spark Streaming (P2 — this folder) ──► MongoDB (P3)
                   Data Quality metrics
 ```
 
-## Inputs (Kafka topics)
+## Inputs (Kafka topics — all 6 now produced by P1)
 
 | Topic | Partitions | Schema |
 |---|---|---|
 | `smart-meters` | 3 | [smart_meter.schema.json](../ingestion/schemas/smart_meter.schema.json) |
 | `weather` | 1 | [weather.schema.json](../ingestion/schemas/weather.schema.json) |
 | `incident-reports` | 1 | [incident_report.schema.json](../ingestion/schemas/incident_report.schema.json) |
-| `rss-feeds` ⚠️ | TBD | **TODO (P1 must add)** — industrial news RSS (professor's spec Section A) |
-| `market-prices` ⚠️ | TBD | **TODO (P1 must add)** — energy market prices (professor's spec Section A) |
+| `rss-feeds` | 1 | [rss_feed.schema.json](../ingestion/schemas/rss_feed.schema.json) |
+| `market-prices` | 1 | [market_price.schema.json](../ingestion/schemas/market_price.schema.json) |
+| `user-feedback` | 3 | [user_feedback.schema.json](../ingestion/schemas/user_feedback.schema.json) |
 
 Bootstrap servers:
 - **Inside Docker:** `kafka:29092` (local/pseudo) or `kafka1:29092,kafka2:29092,kafka3:29092` (distributed)
 - **From host:** `localhost:9092`
+
+## ⚠️ Spark connector packaging (read FIRST)
+
+The Spark images in `docker-compose.*.yml` are the bare `apache/spark:3.5.0`
+distribution. They do NOT ship with the Kafka or MongoDB connector JARs.
+Without these, `spark.readStream.format("kafka")` and
+`writeStream.format("mongodb")` will throw `ClassNotFoundException` at runtime.
+
+You have two options. Pick one and stick to it.
+
+### Option A — Pull connectors at submit time via `--packages` (simpler)
+
+Run every `spark-submit` with the `--packages` flag:
+
+```bash
+spark-submit \
+  --master spark://spark-master:7077 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
+  processing/spark_streaming.py
+```
+
+Or set it once in `SparkSession.builder.config("spark.jars.packages", ...)` (see
+starter snippet below). On the very first job submission Spark downloads the
+JARs from Maven Central into `~/.ivy2/` (cached for subsequent runs).
+Pro: zero image changes. Con: needs internet on first run.
+
+### Option B — Bake connectors into a custom Spark image (production-grade)
+
+Create `docker/spark/Dockerfile`:
+
+```dockerfile
+FROM apache/spark:3.5.0
+USER root
+RUN curl -L -o /opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.0.jar \
+      https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.12/3.5.0/spark-sql-kafka-0-10_2.12-3.5.0.jar \
+ && curl -L -o /opt/spark/jars/spark-token-provider-kafka-0-10_2.12-3.5.0.jar \
+      https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.12/3.5.0/spark-token-provider-kafka-0-10_2.12-3.5.0.jar \
+ && curl -L -o /opt/spark/jars/kafka-clients-3.5.0.jar \
+      https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/3.5.0/kafka-clients-3.5.0.jar \
+ && curl -L -o /opt/spark/jars/commons-pool2-2.11.1.jar \
+      https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar \
+ && curl -L -o /opt/spark/jars/mongo-spark-connector_2.12-10.3.0.jar \
+      https://repo1.maven.org/maven2/org/mongodb/spark/mongo-spark-connector_2.12/10.3.0/mongo-spark-connector_2.12-10.3.0.jar \
+ && curl -L -o /opt/spark/jars/mongodb-driver-sync-4.11.1.jar \
+      https://repo1.maven.org/maven2/org/mongodb/mongodb-driver-sync/4.11.1/mongodb-driver-sync-4.11.1.jar
+USER spark
+```
+
+Then in each `docker-compose.*.yml`, replace `image: apache/spark:3.5.0` with
+`build: { context: .., dockerfile: docker/spark/Dockerfile }` for both
+`spark-master` and `spark-worker*` services. Pro: offline-capable, predictable.
+Con: image ~600 MB, slower CI builds.
+
+**Recommended:** Option A for the demo, Option B if you have time.
 
 ## Outputs (MongoDB collections — coordinate with P3)
 

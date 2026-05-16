@@ -150,7 +150,8 @@ docker exec kafka-local kafka-console-consumer \
 
 ### Live Consumer Verification
 
-Subscribe to all 3 topics and watch messages flow in real time:
+Subscribe to all 6 topics, validate every message against its JSON schema, run
+sanity checks, and exit with a non-zero code on any failure (suitable for CI).
 
 **Windows:**
 ```powershell
@@ -162,7 +163,20 @@ Subscribe to all 3 topics and watch messages flow in real time:
 source .venv/bin/activate && python -m ingestion.consumers.verify_topics
 ```
 
-Press Ctrl-C to stop. A per-topic message count summary is printed on shutdown.
+Useful flags:
+
+| Flag | Purpose |
+|---|---|
+| `--max-seconds 60` | Stop after 60 seconds (good for CI / quick demo) |
+| `--from-beginning` | Replay from earliest offset (default: only new messages) |
+| `--no-require-each` | Don't fail when a slow topic (e.g. `market-prices`, hourly) hasn't ticked yet |
+
+Exit codes: `0` = all topics delivered schema-valid messages; `1` = at least
+one schema or sanity-check failure; `2` = at least one topic produced zero
+messages during the run.
+
+Press Ctrl-C to stop. A per-topic summary (valid / schema_invalid / sanity_failed)
+is printed on shutdown.
 
 ### Kafka UI & Schema Registry
 
@@ -191,9 +205,23 @@ Expected output:
 [OK]    smart-meters-value             id=1
 [OK]    weather-value                  id=2
 [OK]    incident-reports-value         id=3
+[OK]    rss-feeds-value                id=4
+[OK]    market-prices-value            id=5
+[OK]    user-feedback-value            id=6
 ```
 
 Re-running is safe — it only registers a new version if the schema changed.
+
+### MongoDB initialization
+
+`storage/init/init-mongo.js` runs **once** on first MongoDB startup
+(`mongo:7.0` executes every `*.js` in `/docker-entrypoint-initdb.d/` against
+an empty data dir). It creates 5 collections (`meters_raw`,
+`meters_aggregated_15min`, `weather`, `incidents`, `ml_predictions`), the
+`spark_writer` service account, query indexes, and TTL indexes that enforce
+GDPR retention automatically (90 d raw / 1 y aggregated / 2 y incidents).
+
+To re-run (for example after editing the script): `docker compose -f docker/docker-compose.<mode>.yml down -v` (this **destroys** the volume), then `up -d`.
 
 ## Team
 

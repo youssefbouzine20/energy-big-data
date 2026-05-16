@@ -21,9 +21,12 @@ with open(SCHEMA_PATH) as f:
 
 # ── Simulation ────────────────────────────────────────────────────────────────
 def get_temperature() -> float:
-    hour             = datetime.now().hour
+    # UTC throughout — timestamps on the wire are UTC, so the diurnal model must
+    # match. Tetouan peak temperature ~14h LOCAL = 13h UTC; using local time here
+    # would offset the diurnal curve from the timestamp the consumers see.
+    hour             = datetime.now(timezone.utc).hour
     base, amplitude  = 26.0, 7.0
-    angle            = 2 * math.pi * (hour - 14) / 24
+    angle            = 2 * math.pi * (hour - 13) / 24
     temp             = base + amplitude * math.cos(angle) + random.gauss(0, 1.5)
     return round(max(-10.0, min(50.0, temp)), 1)
 
@@ -39,7 +42,8 @@ def get_humidity(temp: float) -> float:
     return round(max(0.0, min(100.0, base + random.gauss(0, 5))), 1)
 
 def get_solar_irradiance() -> float:
-    hour = datetime.now().hour
+    # UTC. Sun rises ~6h UTC in Tetouan (≈7h local), sets ~19h UTC.
+    hour = datetime.now(timezone.utc).hour
     if hour < 6 or hour >= 20:
         return 0.0
     angle      = math.pi * (hour - 6) / 14
@@ -47,9 +51,13 @@ def get_solar_irradiance() -> float:
     return round(max(0.0, min(1000.0, irradiance)), 1)
 
 def get_wind_speed(prev: float) -> float:
-    hour  = datetime.now().hour
-    boost = 1.3 if 12 <= hour <= 18 else 1.0
-    wind  = (prev + random.gauss(0, 0.5)) * boost
+    # UTC + ADDITIVE boost: previously the multiplicative boost (* 1.3) compounded
+    # every cycle inside the boost window and saturated the wind at the 50 m/s
+    # cap within minutes. Switch to additive so the boost is a per-cycle increment
+    # (~3 m/s) over the calm baseline, matching real afternoon sea-breeze patterns.
+    hour  = datetime.now(timezone.utc).hour
+    boost = 3.0 if 12 <= hour <= 18 else 0.0
+    wind  = prev + random.gauss(0, 0.5) + boost - 0.4 * (prev - 3.0)  # mean-revert to 3 m/s
     return round(max(0.5, min(50.0, wind)), 1)
 
 def get_severity(temp: float, wind: float) -> str:
@@ -138,7 +146,8 @@ while running:
               f"feels={msg['feels_like_c']}°C | "
               f"irr={msg['solar_irradiance_wm2']}W/m² | "
               f"severity={msg['weather_severity']}")
-        producer.flush(timeout=5)
+        # No per-cycle flush: poll(0) above services delivery callbacks; the
+        # background thread handles batching. Final flush happens on shutdown.
     except BufferError:
         producer.poll(1)
     except KafkaException as e:

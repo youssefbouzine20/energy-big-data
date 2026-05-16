@@ -175,7 +175,7 @@ while running:
         print(f"  -> {msg['market']:<10} | EUR={msg['price_eur_mwh']}/MWh | "
               f"demand={msg['demand_forecast_mw']}MW | "
               f"renew={msg['renewable_share_pct']}% | {msg['trend']}")
-        producer.flush(timeout=5)
+        # No per-cycle flush — poll(0) services callbacks; final flush on shutdown.
     except BufferError:
         producer.poll(1)
     except KafkaException as e:

@@ -83,14 +83,15 @@ FEEDBACK_TEMPLATES = {
 }
 
 # ── ID counter ────────────────────────────────────────────────────────────────
+# UTC dates so the ID date matches the message timestamp date.
 _counter     = 0
-_counter_day = datetime.now().date()
+_counter_day = datetime.now(timezone.utc).date()
 
 
 def next_feedback_id() -> str:
     """Generate a unique daily-sequential feedback ID like FB-20260515-001."""
     global _counter, _counter_day
-    today = datetime.now().date()
+    today = datetime.now(timezone.utc).date()
     if today != _counter_day:
         _counter = 0
         _counter_day = today
@@ -142,8 +143,12 @@ def build_message() -> dict:
     category, sentiment = sample_category_and_sentiment()
     text_template       = random.choice(FEEDBACK_TEMPLATES[(category, sentiment)])
 
+    # Pick zone ONCE so the text body and the zone field are consistent.
+    # (Independent picks would silently break P2 NLP↔incident correlation.)
+    zone = random.choice(["A", "B", "C", "D"])
+
     text = text_template.format(
-        zone     = random.choice(["A", "B", "C", "D"]),
+        zone     = zone,
         duration = random.randint(5, 240),
         hour     = random.randint(0, 23),
         percent  = random.randint(15, 80),
@@ -154,7 +159,7 @@ def build_message() -> dict:
         "feedback_id":    next_feedback_id(),
         "timestamp":      datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "user_id":        f"U-{random.randint(10000, 99999):05d}",
-        "zone":           random.choice(["A", "B", "C", "D"]),
+        "zone":           zone,
         "channel":        random.choice(["WEB", "MOBILE", "CALL_CENTER", "EMAIL"]),
         "sentiment":      sentiment,
         "category":       category,
@@ -225,7 +230,7 @@ while running:
         print(f"  -> {msg['feedback_id']} | zone={msg['zone']} | "
               f"{msg['sentiment']:<8} | {msg['category']:<8} | "
               f"{msg['channel']:<11} | {msg['text'][:60]}...")
-        producer.flush(timeout=5)
+        # No per-cycle flush — poll(0) services callbacks; final flush on shutdown.
     except BufferError:
         producer.poll(1)
     except KafkaException as e:
