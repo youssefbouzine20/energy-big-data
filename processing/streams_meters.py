@@ -1,9 +1,9 @@
 import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    from_json, col, current_timestamp, window, avg, max as _max, 
-    min as _min, sum as _sum, count, when, stddev, approx_count_distinct, 
-    first, last, broadcast, lit
+    from_json, col, current_timestamp, window, avg, max as _max,
+    min as _min, sum as _sum, count, when, stddev, approx_count_distinct,
+    first, last, lit
 )
 from processing.schemas import METER_SCHEMA, WEATHER_SCHEMA, INCIDENT_SCHEMA
 from processing.spark_session import get_mongo_uri
@@ -68,7 +68,8 @@ def start_meters_stream(spark: SparkSession):
         )
         .withColumn("anomaly_rate_pct", (col("anomaly_count") / col("reading_count")) * 100))
 
-    # 4. JOINTURE BROADCAST AVEC LA METEO (En utilisant la clé temporelle 'window')
+    # 4. JOINTURE AVEC LA METEO (stream-stream join sur fenêtre 15 min alignée)
+    # broadcast() est interdit sur un DataFrame streamé — join stream-stream standard.
     latest_weather = (parsed_weather
         .withWatermark("timestamp", "5 minutes")
         .groupBy(window(col("timestamp"), "15 minutes")) # Aligné sur 15 min pour la jointure
@@ -79,8 +80,8 @@ def start_meters_stream(spark: SparkSession):
 
     # Jointure directe sur l'objet structure 'window' de Spark
     aggregated = windowed_meters.join(
-        broadcast(latest_weather),
-        windowed_meters.window == latest_weather.window, 
+        latest_weather,
+        windowed_meters.window == latest_weather.window,
         "left"
     ).drop(latest_weather.window) # On évite la collision de colonnes
 
