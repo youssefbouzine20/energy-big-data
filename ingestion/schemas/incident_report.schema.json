@@ -54,10 +54,11 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "pattern": "^SM-[0-9]{3}$"
+        "pattern": "^SM-[0-9]{3,}$"
       },
       "minItems": 1,
-      "maxItems": 10
+      "maxItems": 20,
+      "description": "Up to 20 affected meters per incident (zone-wide outages). Pattern supports thousands of meters."
     },
     "estimated_duration_min": {
       "type": "integer",

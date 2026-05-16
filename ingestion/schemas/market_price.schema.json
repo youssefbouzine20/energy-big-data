@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MarketPrice",
+  "description": "Hourly energy market prices — external factor mentioned in project Objectif (facteurs externes: meteo, prix du marche).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "market",
+    "price_mad_mwh",
+    "price_eur_mwh",
+    "demand_forecast_mw",
+    "renewable_share_pct",
+    "trend"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "market": {
+      "type": "string",
+      "enum": ["MASEN", "EU_SPOT", "DAY_AHEAD"],
+      "description": "Source market — MASEN=Moroccan Agency, EU_SPOT=European spot, DAY_AHEAD=auction"
+    },
+    "price_mad_mwh": {
+      "type": "number",
+      "minimum": 100.0,
+      "maximum": 5000.0,
+      "description": "Price in Moroccan Dirhams per MWh"
+    },
+    "price_eur_mwh": {
+      "type": "number",
+      "minimum": 10.0,
+      "maximum": 500.0,
+      "description": "Price in Euros per MWh — direct ML feature"
+    },
+    "demand_forecast_mw": {
+      "type": "number",
+      "minimum": 1000.0,
+      "maximum": 10000.0,
+      "description": "Forecast total grid demand for the hour"
+    },
+    "renewable_share_pct": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 100.0,
+      "description": "Share of forecast demand met by renewables — favors integration (project goal)"
+    },
+    "trend": {
+      "type": "string",
+      "enum": ["RISING", "FALLING", "STABLE"],
+      "description": "Direction vs previous hour — categorical feature for ML"
+    }
+  },
+  "additionalProperties": false
+}

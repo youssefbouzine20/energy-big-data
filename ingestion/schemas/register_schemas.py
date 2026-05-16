@@ -33,6 +33,9 @@ SUBJECT_TO_SCHEMA = {
     "smart-meters-value":     "smart_meter.schema.json",
     "weather-value":          "weather.schema.json",
     "incident-reports-value": "incident_report.schema.json",
+    "rss-feeds-value":        "rss_feed.schema.json",
+    "market-prices-value":    "market_price.schema.json",
+    "user-feedback-value":    "user_feedback.schema.json",
 }
 
 

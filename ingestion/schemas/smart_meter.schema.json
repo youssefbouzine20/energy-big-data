@@ -26,8 +26,8 @@
     },
     "meter_id": {
       "type": "string",
-      "pattern": "^SM-[0-9]{3}$",
-      "description": "Unique meter ID e.g. SM-001"
+      "pattern": "^SM-[0-9]{3,}$",
+      "description": "Unique meter ID e.g. SM-001 or SM-12345. Supports thousands of meters per professor's spec (milliers de compteurs)."
     },
     "timestamp": {
       "type": "string",

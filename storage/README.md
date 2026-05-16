@@ -1,139 +1,425 @@
-# P3 — MongoDB Storage
+# P3 — MongoDB Storage  (FULL WORKFLOW + WHAT TO BUILD)
 
-MongoDB collection design, indices, retention policies, and the shared Python
-helper module that P2 / P4 / P5 import.
+> Owner: P3 teammate.
+> Reads from: nothing (you are the persistence layer).
+> Writes to:  nothing (Spark writes; you provide the schema + access patterns).
+> Used by:    P2 (writes aggregates/raw/NLP), P4 dashboard (reads aggregates),
+>             P5 ML (reads `meters_raw` for training, writes `ml_predictions`).
 
-## Purpose in the pipeline
+---
+
+## 0. The pipeline in one picture
 
 ```
-Spark (P2) ──► MongoDB (P3 — this folder) ──► Streamlit (P4) + ML (P5)
+   P2 Spark                     P3 MongoDB                    P4 Dashboard
+  ──────────                  ─────────────                  ──────────────
+   writeStream  ──── upsert ──► meters_aggregated_15min ─── pymongo.find ──► heatmap, KPIs
+   writeStream  ──── append ──► meters_raw               ─── pymongo.find ──► P5 ML training
+   writeStream  ──── append ──► incidents_enriched       ─── pymongo.find ──► word cloud
+   writeStream  ──── append ──► feedback_nlp             ─── pymongo.find ──► sentiment chart
+   writeStream  ──── append ──► data_quality_metrics     ─── pymongo.find ──► quality badge
+                                       ▲
+                                       │
+                            P5 ML  ─── insert ─── ml_predictions ──► prediction-vs-actual chart
 ```
 
-## Why MongoDB? (REQUIRED justification — professor's Section C)
+**Your job in one sentence:** define the MongoDB collections, indexes, TTL
+retention policies, service accounts, and the shared Python helper module
+that P4 and P5 use to read/write — then explain in the defense WHY MongoDB
+and HOW it satisfies high availability + GDPR.
 
-The professor explicitly grades on "pourquoi telle base NoSQL?". Be ready to defend the choice:
+---
+
+## 1. What is already done by P1 (don't redo it)
+
+P1 created `storage/init/init-mongo.js` which is **already mounted** into the
+mongodb container in all 3 compose files at
+`/docker-entrypoint-initdb.d/init-mongo.js`. On the very first MongoDB
+startup (when `/data/db` is empty), Mongo runs every `*.js` in that
+directory exactly once. The script creates:
+
+- **5 collections:** `meters_raw`, `meters_aggregated_15min`, `weather`, `incidents`, `ml_predictions`
+- **1 service account:** `spark_writer` (readWrite on `energy_db`) — Spark uses this
+- **Query indexes:** `(meter_id, timestamp)`, `(zone, timestamp)`, etc.
+- **TTL indexes:** 90 d raw / 1 y aggregated / 1 y weather / 2 y incidents / 6 mo predictions
+
+To re-run the init script (after editing it):
+
+```bash
+docker compose -f docker/docker-compose.local.yml down -v   # destroys the volume
+docker compose -f docker/docker-compose.local.yml up -d     # init script runs again
+```
+
+**You will extend this** with extra collections (`incidents_enriched`,
+`feedback_nlp`, `data_quality_metrics`, `dashboard_alerts`) once P2 starts
+writing them. See §4.
+
+---
+
+## 2. Why MongoDB? — REQUIRED defense answer (Section C of the spec)
+
+The professor explicitly grades on "**pourquoi telle base NoSQL ?**". Memorize this table.
 
 | Option | Pros | Cons | Verdict |
 |---|---|---|---|
-| **MongoDB** | Native JSON (matches Kafka message shape 1:1), mature Spark connector, flexible schema for evolving features, HA via replica sets, TTL indexes for GDPR retention | No native SQL joins, eventual consistency under partition | ✅ **Chosen** |
-| HBase | Massive scale, strong consistency, Hadoop ecosystem | Heavy ops overhead, column-family model awkward for nested JSON, no native time-series | ❌ Overkill for project scale |
-| Cassandra | Linear write scalability, multi-datacenter | Restrictive query model (must know key in advance), eventual consistency | ❌ Wrong query pattern for dashboard |
+| **MongoDB** | Native JSON (matches Kafka message shape 1:1), mature Spark connector, flexible schema for evolving features, replica sets for HA, TTL indexes for GDPR retention, secondary indexes for dashboard queries | No native SQL joins, eventual consistency under partition | ✅ **Chosen** |
+| HBase | Massive scale, strong consistency, Hadoop ecosystem | Heavy ops overhead, column-family model awkward for nested JSON, no native time-series | ❌ Overkill for project scale; HDFS dependency adds complexity |
+| Cassandra | Linear write scalability, multi-datacenter, no SPOF | Restrictive query model (must know partition key in advance), no ad-hoc dashboard queries | ❌ Wrong access pattern — dashboard needs flexible queries |
 | Neo4j | Graph queries (zone connectivity, incident propagation) | Not for high-volume time-series ingestion | ❌ Wrong workload |
-| ElasticSearch | Full-text search on incident descriptions | Not a primary store, expensive at scale, no transactions | ➜ Could complement MongoDB for NLP search |
+| ElasticSearch | Full-text search on incident descriptions | Not a primary store, expensive at scale, no transactions | ➜ Could complement MongoDB for NLP search; not chosen for primary |
 
-## Velocity & Variety (professor's framing in Section C)
+### Why MongoDB matches the 5 V's of Big Data here
 
-- **Velocity:** producers emit ~20 msg/min on `smart-meters` + 2 msg/min weather/incidents = ~30k msg/day. MongoDB handles 10k+ inserts/sec on single node. Headroom is large.
-- **Variety:** 4 different document schemas (meters_raw, weather, incidents, ml_predictions). Flexible-schema NoSQL is the natural fit.
+| V | Project value | How MongoDB handles it |
+|---|---|---|
+| **Volume** | ~30 k msg/day, growing | Sharding-ready; single node handles 10k+ inserts/s already |
+| **Velocity** | Real-time streams from Spark | mongo-spark-connector batches inserts efficiently; ack=majority for durability |
+| **Variety** | 6 different topic schemas + derived collections | Schema-flexible documents; per-collection validators if needed |
+| **Veracity** | Data quality varies (sensor noise) | MongoDB schema validation (`db.createCollection(.., validator)`) catches obvious junk |
+| **Value** | Long-term ML training + dashboard insights | Compound indexes power dashboard queries in <50ms |
 
-## High Availability (professor's Section C: "haute disponibilité")
+---
 
-Production setup uses **replica set** (3 members: 1 primary + 2 secondaries):
-- Automatic failover via Raft-like protocol when primary becomes unreachable
-- Read scaling: P4 dashboard can read from secondaries with `readPreference=secondaryPreferred`
-- Oplog-based replication enables point-in-time recovery
-- Aligns with project's distributed mode (Section G — 3 physical nodes for Kafka + 3 for Mongo)
+## 3. High Availability — REQUIRED defense answer (Section C)
 
-For the demo, single-node MongoDB is acceptable (matches local + pseudo modes) — note this in the Rapport with the deployment plan for production.
+For the **Rapport** and the defense, explain how the production deployment
+would achieve "**haute disponibilité**":
 
-## Collections
+### 3-member replica set (production)
 
-| Collection | Source | Purpose | Retention (TTL) |
-|---|---|---|---|
-| `meters_raw` | Spark passthrough of `smart-meters` | Audit + ML training | 90 days |
-| `meters_aggregated_15min` | Spark windowed | Dashboard + ML features | 1 year |
-| `weather` | Spark passthrough of `weather` | Weather correlation | 1 year |
-| `incidents` | Spark passthrough of `incident-reports` | History | 2 years |
-| `incidents_enriched` | Spark NLP output | Word cloud + correlation | 2 years |
-| `feedback_nlp` | Spark NLP on user feedback | Sentiment, dashboard | 1 year |
-| `data_quality_metrics` | Spark quality job | Defense Rapport | 1 year |
-| `ml_predictions` | P5 model output | Dashboard prediction-vs-actual curves | 6 months |
-| `dashboard_alerts` | P4 saturation alerts log | Audit + Rapport | 1 year |
-
-Retention durations match [ethics/GDPR.md](../ethics/GDPR.md) Section 4. **Always** use MongoDB TTL indexes — never delete manually.
-
-## Indices required
-
-```python
-# meters_raw
-db.meters_raw.create_index([("meter_id", 1), ("timestamp", -1)])
-db.meters_raw.create_index([("zone", 1), ("timestamp", -1)])
-db.meters_raw.create_index([("is_anomaly", 1), ("timestamp", -1)])  # for ML queries
-db.meters_raw.create_index("timestamp", expireAfterSeconds=90*86400)  # TTL
-
-# aggregated
-db.meters_aggregated_15min.create_index([("zone", 1), ("window_start", -1)])
-db.meters_aggregated_15min.create_index("window_start", expireAfterSeconds=365*86400)
-
-# incidents
-db.incidents.create_index([("zone", 1), ("timestamp", -1)])
-db.incidents.create_index([("severity", 1), ("resolved", 1)])
-db.incidents.create_index("timestamp", expireAfterSeconds=2*365*86400)
-
-# predictions (used by dashboard for prediction-vs-actual chart)
-db.ml_predictions.create_index([("zone", 1), ("forecast_for", 1)], unique=True)
-db.ml_predictions.create_index("forecast_for", expireAfterSeconds=180*86400)
+```
+                 ┌─────────────┐
+                 │  PRIMARY    │ ◄── all writes go here
+                 │  mongo-1    │
+                 └──────┬──────┘
+                  oplog │ replication
+                ┌───────┴───────┐
+                ▼               ▼
+        ┌─────────────┐ ┌─────────────┐
+        │  SECONDARY  │ │  SECONDARY  │ ◄── readPreference=secondaryPreferred for dashboard
+        │  mongo-2    │ │  mongo-3    │
+        └─────────────┘ └─────────────┘
 ```
 
-P4 dashboard will repeatedly query `(zone, timestamp)` for time-series and `(severity, resolved)` for active incidents. Without these indexes, dashboard latency is 100× worse.
+- **Failover:** if PRIMARY becomes unreachable, the two SECONDARIES hold a
+  Raft-like election and one of them becomes the new PRIMARY. Typical
+  failover time: 10-12 seconds.
+- **Read scaling:** the P4 dashboard can read from secondaries with
+  `readPreference=secondaryPreferred` to avoid loading the primary.
+- **Durability:** Spark writes with `w=majority` so a write is ack'd only
+  after at least 2 of 3 members have it on disk.
+- **Point-in-time recovery:** the oplog (operations log) is a replayable
+  history of every write — restore to any moment in the last N hours.
 
-## Required env vars
+For our **demo we run single-node MongoDB** (matches the 3 compose modes).
+Document this in the Rapport with the production deployment plan above.
 
-`MONGO_HOST`, `MONGO_PORT`, `MONGO_USERNAME`, `MONGO_PASSWORD`, `MONGO_DB_NAME`
+---
 
-## What to build
+## 4. Collection design (the data contract for the whole team)
 
-1. **`storage/init_db.py`** — idempotent script: create all collections, indexes, TTL policies. Run once after `docker compose up`.
-2. **`storage/mongo_client.py`** — shared module that P4 / P5 import for an authenticated `MongoClient`.
-3. **`storage/replica_setup.md`** (optional, for Rapport) — explains how to convert single-node to 3-member replica set for HA.
+The init script already creates collections 1-5. **You add the rest** as
+P2/P4/P5 start writing (extend `init-mongo.js`, then `down -v && up -d` once).
 
-## Starter snippet
+| # | Collection | Source | Purpose | TTL | Already in init script? |
+|---|---|---|---|---|---|
+| 1 | `meters_raw` | Spark passthrough of `smart-meters` | Audit + ML training | 90 d | ✅ |
+| 2 | `meters_aggregated_15min` | Spark windowed aggregate | Dashboard + ML features | 365 d | ✅ |
+| 3 | `weather` | Spark passthrough of `weather` | Weather correlation | 365 d | ✅ |
+| 4 | `incidents` | Spark passthrough of `incident-reports` | History | 730 d | ✅ |
+| 5 | `ml_predictions` | P5 ML model output | Dashboard prediction-vs-actual | 180 d | ✅ |
+| 6 | `incidents_enriched` | Spark NLP output | Word cloud + correlation | 730 d | ⏳ Add when P2 starts NLP |
+| 7 | `feedback_nlp` | Spark NLP on user-feedback | Sentiment analysis chart | 365 d | ⏳ Add when P2 starts feedback NLP |
+| 8 | `rss_feeds` | Spark passthrough of `rss-feeds` | News-to-load correlation | 365 d | ⏳ Add when needed |
+| 9 | `market_prices` | Spark passthrough of `market-prices` | Price ML feature | 365 d | ⏳ Add when needed |
+| 10 | `data_quality_metrics` | Spark per-window quality | Section E reporting | 365 d | ⏳ Add when P2 ships |
+| 11 | `dashboard_alerts` | P4 alert-trigger log | Section H ethics audit | 365 d | ⏳ Add when P4 ships |
+
+Retention durations match `ethics/GDPR.md` Section 4. **Always** use MongoDB
+TTL indexes — never write a cron job that deletes manually. TTL is atomic,
+auditable, and survives backups.
+
+---
+
+## 5. Document schemas — exact contract with P2
+
+Each section is what Spark writes. P3's job is to verify these shapes match
+the index strategy.
+
+### 5.1 `meters_raw`  (Spark append)
+
+```json
+{
+  "_id":          "<auto>",
+  "meter_id":     "SM-007",
+  "timestamp":    ISODate("2026-05-16T18:00:30Z"),
+  "zone":         "B",
+  "consumption_kwh": 0.0234, "voltage_v": 230.5, "frequency_hz": 50.01,
+  "power_factor": 0.95, "is_anomaly": false, "anomaly_reason": null,
+  "hour_of_day":  18, "day_of_week": 5, "is_peak_hour": true,
+  "zone_lat":     35.575, "zone_lon": -5.370,
+  "ingested_at":  ISODate("2026-05-16T18:00:31.123Z")
+}
+```
+
+### 5.2 `meters_aggregated_15min`  (Spark upsert on `(zone, window_start)`)
+
+```json
+{
+  "_id":          "<auto>",
+  "zone":         "B",
+  "window_start": ISODate("2026-05-16T18:00:00Z"),
+  "window_end":   ISODate("2026-05-16T18:15:00Z"),
+  "avg_consumption":   0.0231,
+  "max_consumption":   0.045,
+  "min_consumption":   0.012,
+  "total_consumption_kwh": 25.4,
+  "anomaly_count":     3,
+  "anomaly_rate_pct":  7.5,
+  "voltage_min":       214.5, "voltage_max": 245.2, "voltage_avg": 230.1,
+  "frequency_stddev":  0.04,
+  "meter_count":       5,
+  "weather_temperature_c": 27.5,
+  "weather_severity":      "NORMAL",
+  "active_incidents":      1,
+  "zone_lat":     35.575, "zone_lon": -5.370,
+  "computed_at":  ISODate("2026-05-16T18:15:02.456Z")
+}
+```
+
+### 5.3 `incidents_enriched`  (Spark append)
+
+```json
+{
+  "_id":             "<auto>",
+  "incident_id":     "INC-20260516-001",
+  "zone":            "B", "timestamp": ISODate("..."),
+  "severity":        "HIGH", "type": "POWER_OUTAGE",
+  "description":     "...",
+  "nlp_keywords":    ["voltage","outage","transformer","crew"],
+  "correlated_anomalies":      12,
+  "correlated_voltage_drops":  8,
+  "computed_at":     ISODate("...")
+}
+```
+
+### 5.4 `ml_predictions`  (P5 insert/upsert on `(zone, forecast_for)`)
+
+```json
+{
+  "_id":             "<auto>",
+  "zone":            "B",
+  "model_name":      "RandomForest",
+  "prediction_time": ISODate("2026-05-16T18:00:00Z"),    // when forecast was made
+  "forecast_for":    ISODate("2026-05-16T18:15:00Z"),    // window the forecast targets
+  "consumption_forecast": 0.038,                          // kWh per meter avg
+  "anomaly_proba":   0.23,                                // probability of anomaly
+  "alert_level":     "INFO",                              // INFO | WARNING | CRITICAL | NORMAL
+  "ratio_to_peak":   0.72                                 // forecast / historical zone peak
+}
+```
+
+### 5.5 `data_quality_metrics`  (Spark insert per topic per window)
+
+See P2 README §2.7 for the exact shape.
+
+---
+
+## 6. Indexes — what the init script creates (and why)
+
+Compound key order matters: index is most useful when the leftmost field is
+the one you filter exactly on.
+
+```javascript
+// Already in init-mongo.js:
+db.meters_raw.createIndex({ meter_id: 1, timestamp: -1 });
+db.meters_raw.createIndex({ zone:     1, timestamp: -1 });
+
+db.meters_aggregated_15min.createIndex({ zone:        1, window_start: -1 });
+db.meters_aggregated_15min.createIndex({ window_start: 1 });
+
+db.weather.createIndex({ timestamp: -1 });
+db.weather.createIndex({ weather_severity: 1, timestamp: -1 });
+
+db.incidents.createIndex({ zone: 1,     timestamp: -1 });
+db.incidents.createIndex({ severity: 1, timestamp: -1 });
+db.incidents.createIndex({ resolved: 1 });
+
+db.ml_predictions.createIndex({ model_name: 1, prediction_time: -1 });
+db.ml_predictions.createIndex({ zone: 1, prediction_time: -1 });
+```
+
+You will add (when those collections exist):
+
+```javascript
+db.incidents_enriched.createIndex({ zone: 1, timestamp: -1 });
+db.incidents_enriched.createIndex({ "nlp_keywords": 1 });        // for word-cloud term lookups
+
+db.feedback_nlp.createIndex({ zone: 1, timestamp: -1 });
+db.feedback_nlp.createIndex({ sentiment_predicted: 1, timestamp: -1 });
+
+db.data_quality_metrics.createIndex({ topic: 1, window_start: -1 });
+
+db.dashboard_alerts.createIndex({ alert_level: 1, triggered_at: -1 });
+```
+
+### Why these specific indexes?
+
+- **Dashboard always filters by zone first**, then time range → `(zone, timestamp)` order
+- **Word cloud queries by keyword** → `nlp_keywords` index makes a 2-second query into 50ms
+- **Active-incidents banner** filters `resolved: false` → `resolved` index
+- **Quality badge** picks the latest per topic → `(topic, window_start)` order
+
+---
+
+## 7. What you must build — explicit task list
+
+| # | File | Purpose | Done when |
+|---|---|---|---|
+| 1 | `storage/__init__.py` | Empty marker | File exists |
+| 2 | `storage/mongo_client.py` | Shared `get_client()` / `get_db()` for P4 & P5 | `from storage.mongo_client import get_db` works in any module |
+| 3 | `storage/extend_init.py` | Idempotent script to add collections 6-11 + their indexes | Re-running is a no-op; collections appear in mongosh |
+| 4 | `storage/replica_setup.md` | Markdown explaining how to convert single-node → 3-member replica set | Includes commands + diagram for the Rapport |
+| 5 | `storage/healthcheck.py` | Optional: Python script to print collection sizes, index stats, TTL countdown | `python -m storage.healthcheck` prints a clean table |
+| 6 | `storage/README.md` (this file) | Already written | — |
+
+---
+
+## 8. Starter snippet — `mongo_client.py`
 
 ```python
-# storage/mongo_client.py
+"""Shared MongoDB client used by P4 dashboard and P5 ML modules."""
 import os
+from pathlib import Path
 from pymongo import MongoClient
 from dotenv import load_dotenv
-from pathlib import Path
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-def get_client() -> MongoClient:
+
+def get_client(role: str = "reader") -> MongoClient:
+    """
+    role:
+      "reader"      -> uses root admin creds for read-heavy P4/P5 work (local dev)
+      "spark_writer" -> uses the limited writer service account (Spark only)
+    """
+    if role == "spark_writer":
+        user = os.getenv("MONGO_SPARK_USER", "spark_writer")
+        pwd  = os.getenv("MONGO_SPARK_PASS", "change-me-before-deploy")
+    else:
+        user = os.getenv("MONGO_USERNAME", "energy_admin")
+        pwd  = os.getenv("MONGO_PASSWORD", "change-me-before-deploy")
+
     return MongoClient(
         host=os.getenv("MONGO_HOST", "localhost"),
         port=int(os.getenv("MONGO_PORT", 27017)),
-        username=os.getenv("MONGO_USERNAME"),
-        password=os.getenv("MONGO_PASSWORD"),
+        username=user,
+        password=pwd,
         authSource="admin",
+        # readPreference="secondaryPreferred",   # enable when running a replica set
     )
 
-def get_db():
-    return get_client()[os.getenv("MONGO_DB_NAME", "energy_db")]
+
+def get_db(role: str = "reader"):
+    return get_client(role)[os.getenv("MONGO_DB_NAME", "energy_db")]
+
+
+if __name__ == "__main__":
+    db = get_db()
+    print("Collections:", db.list_collection_names())
+    print("meters_raw count:", db.meters_raw.estimated_document_count())
 ```
 
-## Required justifications for the defense
+---
 
-1. Why MongoDB over HBase/Cassandra/Neo4j/ElasticSearch? (use the table above)
-2. Why these specific indexes? (Compound key order matters: `(zone, timestamp)` not `(timestamp, zone)` because dashboard always filters by zone first)
-3. Why TTL indexes for retention vs application-level deletion? (Atomicity, no race with backups, GDPR auditability)
-4. How does the system maintain HA under network partition? (Replica set quorum, Raft consensus, eventual consistency window)
-5. Document schemas mirror Kafka schemas 1:1 — why no normalization? (Read-heavy workload + Spark joins handle relations + simpler GDPR erasure)
+## 9. Required justifications for the defense
 
-## Data Quality contribution (Section E)
+1. **Why MongoDB over HBase / Cassandra / Neo4j / ElasticSearch?** — use the table in §2
+2. **Why these specific indexes?** — compound key order matters; dashboard always filters by zone first
+3. **Why TTL indexes for retention vs application-level deletion?** — atomicity, no race with backups, GDPR auditability
+4. **How does the system maintain HA under network partition?** — replica set quorum, Raft consensus, eventual consistency window of ~5-10s
+5. **Why no normalization (denormalized documents)?** — Read-heavy workload + Spark joins handle relations + simpler GDPR erasure (delete one document = delete one user's record)
+6. **Sharding plan for production scale?** — shard key `(zone, timestamp)` would distribute load while keeping zone-local queries on a single shard
 
-P3 doesn't compute quality metrics (that's P2) but enforces them at write time:
-- Reject malformed documents at the Mongo schema validation layer (`db.createCollection(..., validator={...})`)
-- Log rejections to `data_quality_metrics` collection for the Rapport
+---
 
-## Run
+## 10. Run + verify
+
+### One-time: extend the init script (after P2 ships NLP)
 
 ```bash
-.venv/bin/python -m storage.init_db
+# After editing storage/init/init-mongo.js to add new collections + indexes:
+docker compose -f docker/docker-compose.local.yml down -v
+docker compose -f docker/docker-compose.local.yml up -d
 ```
 
-## Verification
+### Sanity-check the database from the host
 
 ```bash
-docker exec mongodb-local mongosh -u admin -p $MONGO_PASSWORD --eval \
-  "use energy_db; db.getCollectionNames(); db.meters_raw.getIndexes()"
+docker exec mongodb-local mongosh \
+  -u $MONGO_USERNAME -p $MONGO_PASSWORD --authenticationDatabase admin \
+  --eval "db.getSiblingDB('energy_db').runCommand({listCollections: 1, nameOnly: true})"
+
+# Show indexes for a specific collection
+docker exec mongodb-local mongosh \
+  -u $MONGO_USERNAME -p $MONGO_PASSWORD --authenticationDatabase admin \
+  --eval "db.getSiblingDB('energy_db').meters_aggregated_15min.getIndexes()"
 ```
+
+### From Python
+
+```bash
+.venv/bin/python -m storage.mongo_client
+# Should print: Collections: [...], meters_raw count: N
+```
+
+### From Kafka UI's Mongo tab
+
+(Kafka UI doesn't actually browse Mongo. Use **MongoDB Compass** if you want a GUI: download free from mongodb.com/products/compass; connect to `mongodb://energy_admin:change-me-before-deploy@localhost:27017/?authSource=admin`.)
+
+---
+
+## 11. Common pitfalls
+
+1. **`Authentication failed`** → verify `MONGO_USERNAME` and `MONGO_PASSWORD` in `.env` match what was set when the volume was first created. If you change credentials in `.env` after the volume exists, mongo keeps the old creds. Fix: `down -v` and `up -d`.
+2. **Init script didn't run** → only runs when `/data/db` is empty. After any edit, `down -v` first.
+3. **TTL not deleting documents** → TTL background thread runs ~every 60 s; document deletion can lag by minutes. Confirm with `db.serverStatus().metrics.ttl`.
+4. **Index not used by query** → `db.collection.find({...}).explain()` and check `winningPlan.stage`. If it says `COLLSCAN`, the index isn't being used.
+5. **Replica set won't start** → KAFKA_CLUSTER_ID equivalent for Mongo is the replica set name; never change it after first init.
+6. **Compass can connect locally but Spark can't** → Spark runs in Docker network and must use `mongodb:27017`, not `localhost:27017`.
+
+---
+
+## 12. Data quality contribution (Section E)
+
+P3 doesn't compute quality metrics (P2 does), but P3 **enforces** them at write
+time using MongoDB schema validators:
+
+```javascript
+// Add to init-mongo.js to reject malformed docs
+db.runCommand({
+    collMod: "meters_raw",
+    validator: {
+        $jsonSchema: {
+            bsonType: "object",
+            required: ["meter_id", "timestamp", "zone", "consumption_kwh"],
+            properties: {
+                consumption_kwh: { bsonType: "double", minimum: 0, maximum: 1.0 },
+                voltage_v:       { bsonType: "double", minimum: 200, maximum: 260 },
+                zone:            { enum: ["A","B","C","D"] }
+            }
+        }
+    },
+    validationLevel: "strict",
+    validationAction: "warn"   // log to mongod.log; don't reject (let Spark handle retries)
+});
+```
+
+This catches "impossible" data that slips through (e.g., a Spark UDF bug),
+without breaking the streaming pipeline.
+
+---
+
+## 13. Dependencies (already in root `requirements.txt`)
+
+`pymongo==4.7.3`, `python-dotenv==1.2.2`. No new dependencies needed.

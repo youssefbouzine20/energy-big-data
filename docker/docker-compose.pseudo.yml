@@ -50,11 +50,17 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    # Explicit retention + cleanup + compression per topic.
+    # smart-meters: 7d (high volume); weather/rss/feedback: 30d;
+    # incidents/prices: 90d (low volume, valuable as long-term ML history).
     entrypoint: ["/bin/bash", "-c",
-      "kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic smart-meters --partitions 3 --replication-factor 1 &&
-       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic weather --partitions 1 --replication-factor 1 &&
-       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic incident-reports --partitions 1 --replication-factor 1 &&
-       echo 'All topics created.'"]
+      "kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic smart-meters --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic weather --partitions 1 --replication-factor 1 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic incident-reports --partitions 1 --replication-factor 1 --config retention.ms=7776000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic rss-feeds --partitions 1 --replication-factor 1 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic market-prices --partitions 1 --replication-factor 1 --config retention.ms=7776000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic user-feedback --partitions 3 --replication-factor 1 --config retention.ms=2592000000 --config cleanup.policy=delete --config compression.type=snappy &&
+       echo 'All 6 topics created with explicit retention + snappy compression.'"]
     networks:
       - energy-net
 
@@ -104,6 +110,8 @@ services:
       - energy-net
 
   # ── MongoDB ────────────────────────────────────────────────────────────────
+  # init script in storage/init/ runs ONCE on first startup (when the volume
+  # is empty). To re-run: docker compose down -v (DESTROYS DATA).
   mongodb:
     image: mongo:7.0
     container_name: mongodb-pseudo
@@ -116,6 +124,7 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_DB_NAME}
     volumes:
       - mongo-pseudo-data:/data/db
+      - ../storage/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 15s

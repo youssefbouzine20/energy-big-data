@@ -44,15 +44,26 @@ DURATION_BY_SEVERITY = {
 }
 
 ALL_METERS = [f"SM-{i:03d}" for i in range(1, NUM_METERS + 1)]
-MAX_AFFECTED = min(5, len(ALL_METERS))
+
+# Severity-tiered cap on affected meters. Schema allows up to 20 meters per
+# incident — a CRITICAL grid-wide outage realistically hits a whole zone, not
+# 5 meters. LOW incidents stay small (single feeder).
+MAX_AFFECTED_BY_SEVERITY = {
+    "LOW":      min(2,  len(ALL_METERS)),
+    "MEDIUM":   min(5,  len(ALL_METERS)),
+    "HIGH":     min(10, len(ALL_METERS)),
+    "CRITICAL": min(20, len(ALL_METERS)),
+}
 
 # ── Counter ───────────────────────────────────────────────────────────────────
+# UTC dates so the ID date always matches the message timestamp date, even if
+# the producer runs across local midnight in a non-UTC timezone.
 _counter     = 0
-_counter_day = datetime.now().date()
+_counter_day = datetime.now(timezone.utc).date()
 
 def next_incident_id() -> str:
     global _counter, _counter_day
-    today = datetime.now().date()
+    today = datetime.now(timezone.utc).date()
     if today != _counter_day:
         _counter     = 0
         _counter_day = today
@@ -78,7 +89,8 @@ def build_message() -> dict:
         "VOLTAGE_DROP", "VOLTAGE_SURGE", "POWER_OUTAGE",
         "OVERLOAD", "EQUIPMENT_FAILURE", "GRID_FAULT"
     ])
-    affected    = random.sample(ALL_METERS, random.randint(1, MAX_AFFECTED))
+    cap         = MAX_AFFECTED_BY_SEVERITY[severity]
+    affected    = random.sample(ALL_METERS, random.randint(1, cap))
     duration    = random.randint(*DURATION_BY_SEVERITY[severity])
     description = random.choice(TEMPLATES).format(
         zone     = zone,
@@ -159,7 +171,7 @@ while running:
         print(f"  → {msg['incident_id']} | zone={msg['zone']} | "
               f"{msg['severity']} | {msg['type']} | "
               f"duration={msg['estimated_duration_min']}min")
-        producer.flush(timeout=5)
+        # No per-cycle flush — poll(0) services callbacks; final flush on shutdown.
     except BufferError:
         producer.poll(1)
     except KafkaException as e:

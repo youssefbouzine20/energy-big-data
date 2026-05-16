@@ -21,6 +21,9 @@ BOOTSTRAP_SERVERS = os.getenv(
 TOPIC_METERS    = os.getenv("KAFKA_TOPIC_METERS",    "smart-meters")
 TOPIC_WEATHER   = os.getenv("KAFKA_TOPIC_WEATHER",   "weather")
 TOPIC_INCIDENTS = os.getenv("KAFKA_TOPIC_INCIDENTS", "incident-reports")
+TOPIC_RSS       = os.getenv("KAFKA_TOPIC_RSS",       "rss-feeds")
+TOPIC_PRICES    = os.getenv("KAFKA_TOPIC_PRICES",    "market-prices")
+TOPIC_FEEDBACK  = os.getenv("KAFKA_TOPIC_FEEDBACK",  "user-feedback")
 
 # ── Topic config ──────────────────────────────────────────────────────────────
 REPLICATION_FACTOR = _get_int("KAFKA_REPLICATION_FACTOR", 1)
@@ -29,6 +32,9 @@ TOPIC_CONFIG = {
     TOPIC_METERS:    {"num_partitions": 3, "replication_factor": REPLICATION_FACTOR},
     TOPIC_WEATHER:   {"num_partitions": 1, "replication_factor": REPLICATION_FACTOR},
     TOPIC_INCIDENTS: {"num_partitions": 1, "replication_factor": REPLICATION_FACTOR},
+    TOPIC_RSS:       {"num_partitions": 1, "replication_factor": REPLICATION_FACTOR},
+    TOPIC_PRICES:    {"num_partitions": 1, "replication_factor": REPLICATION_FACTOR},
+    TOPIC_FEEDBACK:  {"num_partitions": 3, "replication_factor": REPLICATION_FACTOR},
 }
 
 # ── Producer config ───────────────────────────────────────────────────────────
@@ -50,7 +56,10 @@ CONSUMER_CONFIG = {
     "enable.auto.commit": "false",
 }
 
-# ── Intervals ─────────────────────────────────────────────────────────────────
-PRODUCER_INTERVAL = _get_int("PRODUCER_INTERVAL_SECONDS", 30)
-INCIDENT_INTERVAL = _get_int("INCIDENT_INTERVAL_SECONDS", 60)
+# ── Intervals (seconds) ───────────────────────────────────────────────────────
+PRODUCER_INTERVAL = _get_int("PRODUCER_INTERVAL_SECONDS", 30)    # smart meters + weather
+INCIDENT_INTERVAL = _get_int("INCIDENT_INTERVAL_SECONDS", 60)    # incident reports
+RSS_INTERVAL      = _get_int("RSS_INTERVAL_SECONDS",      120)   # RSS feed items
+PRICE_INTERVAL    = _get_int("PRICE_INTERVAL_SECONDS",    3600)  # hourly market prices
+FEEDBACK_INTERVAL = _get_int("FEEDBACK_INTERVAL_SECONDS", 45)    # user feedback
 NUM_METERS        = _get_int("NUM_METERS", 10)
