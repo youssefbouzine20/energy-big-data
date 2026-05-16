@@ -13,13 +13,14 @@ FROM apache/spark:3.5.0
 
 USER root
 
-# numpy        — required by pyspark.ml.feature
+# numpy        — required by pyspark.ml.feature  (Python 3.8 in this image
+#                → max numpy 1.24.x, NOT 1.26.x like the host venv)
 # nltk         — required by streams_feedback.py for VADER sentiment
 # python-dotenv — lets processing/spark_session.py also work outside container
 RUN pip install --no-cache-dir \
-        numpy==1.26.4 \
-        nltk==3.8.1 \
-        python-dotenv==1.2.2 \
+        "numpy<1.25" \
+        "nltk>=3.8" \
+        python-dotenv \
  && python -c "import nltk; nltk.download('vader_lexicon', download_dir='/opt/nltk_data')" \
  && python -c "import nltk; nltk.download('stopwords', download_dir='/opt/nltk_data')"
 
