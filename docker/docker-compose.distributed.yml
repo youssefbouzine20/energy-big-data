@@ -223,8 +223,19 @@ services:
       - energy-net
 
   # ── Spark Master ───────────────────────────────────────────────────────────
+  # Same setup as local mode: custom image (numpy + nltk + vader baked in),
+  # project root mounted at /workspace, env vars overriding processing/spark_session.py
+  # defaults so Spark inside the container reaches all 3 Kafka brokers + Mongo
+  # via Docker service names.
+  # Run jobs with:
+  #   docker exec spark-master-dist /opt/spark/bin/spark-submit \
+  #     --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
+  #     /workspace/processing/main.py
   spark-master:
-    image: apache/spark:3.5.0
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.spark
+    image: energy/spark:3.5.0    # custom tag — shared with spark-workers below
     container_name: spark-master-dist
     restart: on-failure
     user: root
@@ -232,20 +243,44 @@ services:
     environment:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_MASTER_HOST: spark-master
+      # Multi-broker bootstrap — Spark inside the network reaches brokers via
+      # service names on the internal listener (port 29092).
+      KAFKA_BOOTSTRAP_SERVERS: kafka1:29092,kafka2:29092,kafka3:29092
+      MONGO_HOST: mongodb
+      MONGO_PORT: "27017"
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-energy_db}
+      MONGO_SPARK_USER: ${MONGO_USERNAME:-energy_admin}
+      MONGO_SPARK_PASS: ${MONGO_PASSWORD:-change-me-before-deploy}
+      NUM_METERS: ${NUM_METERS:-10}
+      SPARK_CHECKPOINT_DIR: /tmp/spark-checkpoints
+      PYTHONPATH: /workspace
     ports:
       - "8080:8080"
       - "7077:7077"
+    volumes:
+      - ..:/workspace:rw
+      - spark-ivy-cache:/root/.ivy2
+      - spark-checkpoints:/tmp/spark-checkpoints
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080 || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
+    depends_on:
+      kafka1:
+        condition: service_healthy
+      kafka2:
+        condition: service_healthy
+      kafka3:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
     networks:
       - energy-net
 
   # ── Spark Worker 1 ─────────────────────────────────────────────────────────
   spark-worker-1:
-    image: apache/spark:3.5.0
+    image: energy/spark:3.5.0     # built by spark-master service above
     container_name: spark-worker-1-dist
     restart: on-failure
     user: root
@@ -254,6 +289,10 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-1g}
       SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-1}
+    volumes:
+      - ..:/workspace:rw
+      - spark-ivy-cache:/root/.ivy2
+      - spark-checkpoints:/tmp/spark-checkpoints
     depends_on:
       spark-master:
         condition: service_healthy
@@ -266,7 +305,7 @@ services:
 
   # ── Spark Worker 2 ─────────────────────────────────────────────────────────
   spark-worker-2:
-    image: apache/spark:3.5.0
+    image: energy/spark:3.5.0
     container_name: spark-worker-2-dist
     restart: on-failure
     user: root
@@ -275,6 +314,10 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-1g}
       SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-1}
+    volumes:
+      - ..:/workspace:rw
+      - spark-ivy-cache:/root/.ivy2
+      - spark-checkpoints:/tmp/spark-checkpoints
     depends_on:
       spark-master:
         condition: service_healthy
@@ -299,4 +342,8 @@ volumes:
   mongo-dist-data:
     driver: local
   schema-registry-dist-data:
+    driver: local
+  spark-ivy-cache:
+    driver: local
+  spark-checkpoints:
     driver: local

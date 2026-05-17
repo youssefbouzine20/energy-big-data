@@ -6,12 +6,15 @@ from pyspark.sql.functions import (
 )
 from processing.spark_session import get_mongo_uri
 
-# Nombres de messages attendus par fenêtre de 15 minutes selon les fréquences de P1
+# Nombres de messages attendus par fenêtre de 15 minutes selon les fréquences de P1.
+# smart-meters: NUM_METERS msgs/batch × 1 batch/30s = 2 batches/min × 15 min
+# Défaut NUM_METERS=10 → 10 × 2 × 15 = 300. Lit NUM_METERS depuis l'env pour s'adapter.
+_NUM_METERS = int(os.getenv("NUM_METERS", 10))
 EXPECTED_PER_15MIN = {
-    "smart-meters": 600,      # 20 compteurs * 2 msgs/min * 15 min
-    "weather": 30,            # 2 msgs/min * 15 min
-    "incident-reports": 15,   # 1 msg/min * 15 min
-    "user-feedback": 20       # 1 msg/45s = ~1.33/min * 15 min
+    "smart-meters": _NUM_METERS * 30,  # dynamique selon NUM_METERS
+    "weather": 30,                     # 2 msgs/min * 15 min
+    "incident-reports": 15,            # 1 msg/min * 15 min
+    "user-feedback": 20                # 1 msg/45s ≈ 1.33/min * 15 min
 }
 
 def compute_meters_quality(df_meters_parsed):

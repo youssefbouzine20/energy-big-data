@@ -143,18 +143,25 @@ Paste the UUID after `KAFKA_CLUSTER_ID=` in `.env`. **Don't** change it later
 > deployment. The MongoDB image starts WITHOUT authentication if these
 > values are blank.   ( admin123 )
 
-### Step 3 — Start the infrastructure (local mode)
+### Step 3 — Build + start the infrastructure (local mode)
 
+**First time only** — build the custom Spark image (adds numpy + nltk + VADER
+lexicon to the bare `apache/spark:3.5.0` image; ~2 min, one-time per machine):
+```bash
+docker compose -f docker/docker-compose.local.yml --env-file .env build
+```
+
+**Every run** — start all services:
 ```bash
 docker compose -f docker/docker-compose.local.yml --env-file .env up -d
 ```
 
-This brings up: Kafka + Schema Registry + Kafka UI + MongoDB + Spark master + Spark worker.
-First run pulls ~2 GB of images.
+This brings up: Kafka + Schema Registry + Kafka UI + MongoDB + Spark master +
+Spark worker. First run pulls ~2 GB of images.
 
 Wait ~30 seconds for all services to be healthy:
 ```bash
-docker compose -f docker/docker-compose.local.yml ps
+docker compose -f docker/docker-compose.local.yml --env-file .env ps
 # All entries should show "Up (healthy)" or "Up"
 ```
 
@@ -247,7 +254,61 @@ Exit code is `0` on success, `1` on schema/sanity violation, `2` if a topic
 was silent. Use `--no-require-each` if you don't want exit code 2 for slow
 topics.
 
-### Step 7 — Open the web UIs
+### Step 7 — Start the Spark pipeline (P2 — Marouan's code, runs in the container)
+
+This is the **team-wide command** — works identically on Windows / Mac /
+Linux / WSL because Spark runs inside the `spark-master-<mode>` container.
+The project source is mounted at `/workspace`; the connector JARs cache in a
+Docker volume. **The same command works on all 3 modes** — only the container
+name suffix changes (see [§5 container-names cheat-sheet](#-container-names-per-mode-cheat-sheet)).
+
+```bash
+# Local mode (default — this section's example)
+docker exec spark-master-local /opt/spark/bin/spark-submit \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
+  /workspace/processing/main.py
+
+# Pseudo mode  → spark-master-pseudo
+# Distributed mode → spark-master-dist
+```
+
+On Windows PowerShell, use backticks for line continuation, or paste it all on one line.
+
+First run downloads ~100 MB of Spark Kafka + MongoDB connector JARs into the
+`spark-ivy-cache` volume (~2 min). Subsequent runs are instant. The ivy cache
+is **per mode** — first run on each new mode re-downloads the JARs once.
+
+Wait for the line:
+```
+Tous les flux sont démarrés avec succès !
+En écoute continue sur Kafka...
+```
+
+The command stays running — **don't Ctrl+C**. The 7 streams (`weather`, `rss`,
+`market`, `incidents`, `feedback`, `meters` raw + aggregated, `data_quality`)
+now write to MongoDB continuously.
+
+> **Why not `python -m processing.main` from the host?** That would launch
+> PySpark in `local[*]` mode on your machine. On Windows it crashes without
+> `winutils.exe`; on Mac/Linux it works but requires every teammate to have
+> Python 3.10 + PySpark + numpy + nltk + a downloaded VADER lexicon
+> installed locally. The container has all of this baked in — every
+> teammate just needs Docker.
+
+After ~2 min, verify Mongo is filling up (substitute `mongodb-pseudo` or
+`mongodb-dist` for other modes — see [§5 cheat-sheet](#-container-names-per-mode-cheat-sheet)):
+```bash
+docker exec mongodb-local mongosh -u energy_admin -p change-me-before-deploy \
+  --authenticationDatabase admin --quiet energy_db \
+  --eval "db.getCollectionNames().forEach(c => print(c.padEnd(28) + ': ' + db[c].countDocuments() + ' docs'))"
+```
+
+Expected: 11 collections, with `meters_raw` growing fastest (~40 docs / 30 s),
+`weather` / `incidents` / `feedback_nlp` slower, `meters_aggregated_15min`
+appearing after the first 15-min window closes, `market_prices` after the
+first hour, `ml_predictions` empty until P5 ships.
+
+### Step 8 — Open the web UIs
 
 | URL | What you see |
 |---|---|
@@ -268,6 +329,29 @@ consume from `kafka:29092` (inside Docker) or `localhost:9092` (from the host).
 | **Local** | `docker-compose.local.yml` | 1 | 1 | ❌ No (no volume) | Daily development; restarts wipe the slate |
 | **Pseudo-distributed** | `docker-compose.pseudo.yml` | 1 | 1 | ✅ Yes (named volumes) | Multi-day work; data survives `docker compose down` |
 | **Fully distributed** | `docker-compose.distributed.yml` | 3 | 3 (MIN_ISR=2) | ✅ Yes | Defense demo to show RF=3 + broker failover |
+
+All three modes run **the same custom Spark image** (`energy/spark:3.5.0`, built
+from `docker/Dockerfile.spark` — numpy + nltk + vader baked in), mount the
+project root at `/workspace`, and pass the right Kafka/Mongo env vars to Spark.
+So `processing/main.py` runs identically on local / pseudo / distributed —
+only the container names and broker count differ.
+
+### 🔖 Container names per mode (cheat-sheet)
+
+When teammates copy-paste a `docker exec ...` command, the container suffix
+changes with the mode. Use this table to substitute:
+
+| Service | Local | Pseudo | Distributed |
+|---|---|---|---|
+| Kafka broker(s) | `kafka-local` | `kafka-pseudo` | `kafka1-dist`, `kafka2-dist`, `kafka3-dist` |
+| Schema Registry | `schema-registry-local` | `schema-registry-pseudo` | `schema-registry-dist` |
+| Kafka UI | `kafka-ui-local` | `kafka-ui-pseudo` | `kafka-ui-dist` |
+| MongoDB | `mongodb-local` | `mongodb-pseudo` | `mongodb-dist` |
+| Spark master | `spark-master-local` | `spark-master-pseudo` | `spark-master-dist` |
+| Spark worker(s) | `spark-worker-local` | `spark-worker-pseudo` | `spark-worker-1-dist`, `spark-worker-2-dist` |
+
+Rule of thumb: **`-local` → `-pseudo` → `-dist`**, except Kafka in distributed
+which uses three numbered names.
 
 ### Switching modes
 
@@ -396,7 +480,8 @@ energy-big-data/
 ├── docker/
 │   ├── docker-compose.local.yml         ← Dev mode, ephemeral
 │   ├── docker-compose.pseudo.yml        ← Single broker + volumes
-│   └── docker-compose.distributed.yml   ← 3 brokers, RF=3, MIN_ISR=2
+│   ├── docker-compose.distributed.yml   ← 3 brokers, RF=3, MIN_ISR=2
+│   └── Dockerfile.spark                 ← Custom Spark image (numpy + nltk + vader)
 │
 ├── ingestion/                           ← 🟢 P1 (DONE)
 │   ├── config/
@@ -420,8 +505,17 @@ energy-big-data/
 │   └── consumers/
 │       └── verify_topics.py             ← End-to-end pipeline verifier
 │
-├── processing/                          ← 🟡 P2 (TODO)
-│   └── README.md                        ← Detailed workflow + task list
+├── processing/                          ← 🟢 P2 (DONE — Marouan)
+│   ├── README.md                        ← Detailed workflow + task list
+│   ├── main.py                          ← Orchestrator: starts all 7 streams
+│   ├── spark_session.py                 ← SparkSession + Mongo URI builder
+│   ├── schemas.py                       ← StructType for the 6 Kafka topics
+│   ├── data_quality.py                  ← Per-window completeness / noise / anomaly rate
+│   ├── streams_weather.py               ← weather passthrough → MongoDB
+│   ├── streams_external.py              ← rss + market passthrough → MongoDB
+│   ├── streams_incidents.py             ← incidents + NLP keyword extraction
+│   ├── streams_feedback.py              ← feedback + VADER sentiment
+│   └── streams_meters.py                ← 15-min agg by zone + weather + incident joins
 │
 ├── storage/                             ← 🟡 P3 (TODO; init script done)
 │   ├── README.md                        ← Collection design + HA plan
@@ -447,6 +541,32 @@ energy-big-data/
 ### "ClassNotFoundException: KafkaSourceProvider" (Spark)
 
 You forgot to add the connector packages. See [`processing/README.md` §3](processing/README.md#3--spark-connector-packaging--read-first).
+
+### Spark crashes with `HADOOP_HOME unset` / `winutils.exe not found` (Windows)
+
+You ran `python -m processing.main` on the host instead of inside the
+container. PySpark on native Windows requires `winutils.exe` and a configured
+`HADOOP_HOME`. **Use the containerized approach** documented in §4 Step 7
+instead — it works on every OS without extra setup:
+```bash
+docker exec spark-master-local /opt/spark/bin/spark-submit \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
+  /workspace/processing/main.py
+```
+
+### Spark crashes with `ModuleNotFoundError: numpy` or `nltk`
+
+The custom Spark image wasn't built. Run once:
+```bash
+docker compose -f docker/docker-compose.local.yml --env-file .env build
+docker compose -f docker/docker-compose.local.yml --env-file .env up -d --force-recreate spark-master spark-worker
+```
+
+### Spark crashes with `MongoServerError: Authentication failed`
+
+The `MONGO_SPARK_PASS` in `.env` must match `MONGO_PASSWORD` (Spark connects
+as the root admin). If you rotated `MONGO_PASSWORD` after the volume was
+created, recreate the volume: `docker compose -f docker/docker-compose.local.yml down -v && up -d`.
 
 ### Kafka refuses to start after editing `.env`
 
@@ -499,11 +619,25 @@ The professor grades on (per the spec, sections D + E + H):
 4. **Real-time dashboard with all 4 sections** — section F. P4 must have heatmap + prediction-vs-actual + word cloud + predictive alerts.
 5. **GDPR + ethics** — sections G + H. See `ethics/GDPR.md` and `dashboard_alerts` audit trail.
 
-Demo script (~10 min): start producers → open Kafka UI (show topics + live messages) → run `verify_topics` (PASS in 60 s) → start Spark job (show Spark UI) → open dashboard (show all 4 sections rendering live) → trigger an injected anomaly + show the alert + word cloud update.
+Demo script (~10 min):
+1. `docker compose up -d` → wait for all healthy
+2. Start the 6 producers (6 terminals)
+3. `verify_topics --max-seconds 60 --no-require-each` → `[PASS]`
+4. `docker exec spark-master-local /opt/spark/bin/spark-submit --packages ... /workspace/processing/main.py` → 7 streams running
+5. Open **Kafka UI** (`:8090`) — show 6 topics receiving live messages
+6. Open **Spark UI** (`:8080`) — show 7 streaming queries
+7. `mongosh ... db.getCollectionNames()` — show 11 collections filling up
+8. Open **Streamlit** (`:8501`) — heatmap + word cloud + alerts rendering live
+9. Trigger an injected anomaly burst → show the dashboard alert + audit log entry in `dashboard_alerts`
 
 ---
 
 ## 11. 👀 Useful commands cheat sheet
+
+> All examples below use **local** mode's container names (`-local`).
+> For pseudo or distributed, substitute the suffix per the
+> [§5 cheat-sheet](#-container-names-per-mode-cheat-sheet):
+> `-local` → `-pseudo` → `-dist` (Kafka in distributed splits into `kafka1-dist` / `kafka2-dist` / `kafka3-dist`).
 
 ```bash
 # Status
@@ -527,6 +661,16 @@ docker exec -it mongodb-local mongosh -u energy_admin -p change-me-before-deploy
 
 # Python verification (quickest health check)
 python -m ingestion.consumers.verify_topics --max-seconds 30 --no-require-each
+
+# Spark pipeline (P2 — runs in the spark-master container, OS-independent)
+docker exec spark-master-local /opt/spark/bin/spark-submit \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
+  /workspace/processing/main.py
+
+# Live MongoDB collection counts
+docker exec mongodb-local mongosh -u energy_admin -p change-me-before-deploy \
+  --authenticationDatabase admin --quiet energy_db \
+  --eval "db.getCollectionNames().forEach(c => print(c.padEnd(28) + ': ' + db[c].countDocuments() + ' docs'))"
 ```
 
 ---
