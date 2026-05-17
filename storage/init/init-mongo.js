@@ -86,7 +86,7 @@ db.meters_raw.createIndex({ meter_id: 1, timestamp: -1 });
 db.meters_raw.createIndex({ zone:     1, timestamp: -1 });
 
 db.meters_aggregated_15min.createIndex({ zone:        1, window_start: -1 });
-db.meters_aggregated_15min.createIndex({ window_start: 1 });
+db.meters_aggregated_15min.createIndex({ window_start: -1 });  // descending: TTL below uses {window_start: 1}, keep distinct
 
 db.weather.createIndex({ timestamp: -1 });
 db.weather.createIndex({ weather_severity: 1, timestamp: -1 });
