@@ -257,20 +257,26 @@ topics.
 ### Step 7 — Start the Spark pipeline (P2 — Marouan's code, runs in the container)
 
 This is the **team-wide command** — works identically on Windows / Mac /
-Linux / WSL because Spark runs inside the `spark-master-local` container.
+Linux / WSL because Spark runs inside the `spark-master-<mode>` container.
 The project source is mounted at `/workspace`; the connector JARs cache in a
-Docker volume.
+Docker volume. **The same command works on all 3 modes** — only the container
+name suffix changes (see [§5 container-names cheat-sheet](#-container-names-per-mode-cheat-sheet)).
 
 ```bash
+# Local mode (default — this section's example)
 docker exec spark-master-local /opt/spark/bin/spark-submit \
   --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 \
   /workspace/processing/main.py
+
+# Pseudo mode  → spark-master-pseudo
+# Distributed mode → spark-master-dist
 ```
 
 On Windows PowerShell, use backticks for line continuation, or paste it all on one line.
 
 First run downloads ~100 MB of Spark Kafka + MongoDB connector JARs into the
-`spark-ivy-cache` volume (~2 min). Subsequent runs are instant.
+`spark-ivy-cache` volume (~2 min). Subsequent runs are instant. The ivy cache
+is **per mode** — first run on each new mode re-downloads the JARs once.
 
 Wait for the line:
 ```
@@ -289,7 +295,8 @@ now write to MongoDB continuously.
 > installed locally. The container has all of this baked in — every
 > teammate just needs Docker.
 
-After ~2 min, verify Mongo is filling up:
+After ~2 min, verify Mongo is filling up (substitute `mongodb-pseudo` or
+`mongodb-dist` for other modes — see [§5 cheat-sheet](#-container-names-per-mode-cheat-sheet)):
 ```bash
 docker exec mongodb-local mongosh -u energy_admin -p change-me-before-deploy \
   --authenticationDatabase admin --quiet energy_db \
@@ -322,6 +329,29 @@ consume from `kafka:29092` (inside Docker) or `localhost:9092` (from the host).
 | **Local** | `docker-compose.local.yml` | 1 | 1 | ❌ No (no volume) | Daily development; restarts wipe the slate |
 | **Pseudo-distributed** | `docker-compose.pseudo.yml` | 1 | 1 | ✅ Yes (named volumes) | Multi-day work; data survives `docker compose down` |
 | **Fully distributed** | `docker-compose.distributed.yml` | 3 | 3 (MIN_ISR=2) | ✅ Yes | Defense demo to show RF=3 + broker failover |
+
+All three modes run **the same custom Spark image** (`energy/spark:3.5.0`, built
+from `docker/Dockerfile.spark` — numpy + nltk + vader baked in), mount the
+project root at `/workspace`, and pass the right Kafka/Mongo env vars to Spark.
+So `processing/main.py` runs identically on local / pseudo / distributed —
+only the container names and broker count differ.
+
+### 🔖 Container names per mode (cheat-sheet)
+
+When teammates copy-paste a `docker exec ...` command, the container suffix
+changes with the mode. Use this table to substitute:
+
+| Service | Local | Pseudo | Distributed |
+|---|---|---|---|
+| Kafka broker(s) | `kafka-local` | `kafka-pseudo` | `kafka1-dist`, `kafka2-dist`, `kafka3-dist` |
+| Schema Registry | `schema-registry-local` | `schema-registry-pseudo` | `schema-registry-dist` |
+| Kafka UI | `kafka-ui-local` | `kafka-ui-pseudo` | `kafka-ui-dist` |
+| MongoDB | `mongodb-local` | `mongodb-pseudo` | `mongodb-dist` |
+| Spark master | `spark-master-local` | `spark-master-pseudo` | `spark-master-dist` |
+| Spark worker(s) | `spark-worker-local` | `spark-worker-pseudo` | `spark-worker-1-dist`, `spark-worker-2-dist` |
+
+Rule of thumb: **`-local` → `-pseudo` → `-dist`**, except Kafka in distributed
+which uses three numbered names.
 
 ### Switching modes
 
@@ -603,6 +633,11 @@ Demo script (~10 min):
 ---
 
 ## 11. 👀 Useful commands cheat sheet
+
+> All examples below use **local** mode's container names (`-local`).
+> For pseudo or distributed, substitute the suffix per the
+> [§5 cheat-sheet](#-container-names-per-mode-cheat-sheet):
+> `-local` → `-pseudo` → `-dist` (Kafka in distributed splits into `kafka1-dist` / `kafka2-dist` / `kafka3-dist`).
 
 ```bash
 # Status

@@ -345,37 +345,85 @@ if __name__ == "__main__":
 
 ## 10. Run + verify
 
+### 🔖 The MongoDB container name depends on the mode you're running
+
+Use this table to pick the right container name before any `docker exec` command:
+
+| Mode | Compose file | MongoDB container | How to switch |
+|---|---|---|---|
+| **Local** | `docker-compose.local.yml` | `mongodb-local` | `docker compose -f docker/docker-compose.local.yml --env-file .env up -d` |
+| **Pseudo-distributed** | `docker-compose.pseudo.yml` | `mongodb-pseudo` | `docker compose -f docker/docker-compose.pseudo.yml --env-file .env up -d` |
+| **Fully distributed** | `docker-compose.distributed.yml` | `mongodb-dist` | `docker compose -f docker/docker-compose.distributed.yml --env-file .env up -d` |
+
+Check what's running right now (any mode):
+
+```powershell
+docker ps --filter "name=mongodb" --format "table {{.Names}}\t{{.Status}}"
+```
+
+You should see exactly **one** of `mongodb-local` / `mongodb-pseudo` / `mongodb-dist`.
+Throughout the rest of this section, substitute the matching name for `<mongodb-container>`.
+
 ### One-time: extend the init script (after P2 ships NLP)
 
-```bash
-# After editing storage/init/init-mongo.js to add new collections + indexes:
+```powershell
+# After editing storage/init/init-mongo.js to add new collections + indexes.
+# Pick the compose file matching your current mode:
 docker compose -f docker/docker-compose.local.yml down -v
-docker compose -f docker/docker-compose.local.yml up -d
+docker compose -f docker/docker-compose.local.yml --env-file ..\.env up -d
 ```
+
+> ⚠️ `down -v` **destroys** Mongo data (and Kafka logs) in pseudo + distributed
+> modes. Only do this if you actually need to re-run the init script. Local
+> mode has no volume so `down -v` and `down` are equivalent there.
 
 ### Sanity-check the database from the host
 
-```bash
-docker exec mongodb-local mongosh \
-  -u $MONGO_USERNAME -p $MONGO_PASSWORD --authenticationDatabase admin \
+```powershell
+# Replace <mongodb-container> with mongodb-local / mongodb-pseudo / mongodb-dist
+docker exec <mongodb-container> mongosh `
+  -u energy_admin -p change-me-before-deploy --authenticationDatabase admin `
   --eval "db.getSiblingDB('energy_db').runCommand({listCollections: 1, nameOnly: true})"
 
 # Show indexes for a specific collection
-docker exec mongodb-local mongosh \
-  -u $MONGO_USERNAME -p $MONGO_PASSWORD --authenticationDatabase admin \
+docker exec <mongodb-container> mongosh `
+  -u energy_admin -p change-me-before-deploy --authenticationDatabase admin `
   --eval "db.getSiblingDB('energy_db').meters_aggregated_15min.getIndexes()"
 ```
 
-### From Python
+Linux / WSL / Mac users replace the PowerShell backticks with bash backslashes.
 
-```bash
-.venv/bin/python -m storage.mongo_client
+### Live collection counts (every mode — same command pattern)
+
+```powershell
+docker exec <mongodb-container> mongosh `
+  -u energy_admin -p change-me-before-deploy --authenticationDatabase admin `
+  --quiet energy_db `
+  --eval "db.getCollectionNames().forEach(c => print(c.padEnd(28) + ': ' + db[c].countDocuments() + ' docs'))"
+```
+
+Expected (with all producers + Spark running for >15 min): 11 collections.
+
+### From Python (host-side, after `pip install -r requirements.txt`)
+
+```powershell
+.venv\Scripts\python -m storage.mongo_client
 # Should print: Collections: [...], meters_raw count: N
 ```
 
-### From Kafka UI's Mongo tab
+`storage/mongo_client.py` connects via `localhost:27017` (read from `.env`).
+This works regardless of which mode is running because all 3 modes publish
+Mongo on the same host port (`MONGO_PORT=27017`).
 
-(Kafka UI doesn't actually browse Mongo. Use **MongoDB Compass** if you want a GUI: download free from mongodb.com/products/compass; connect to `mongodb://energy_admin:change-me-before-deploy@localhost:27017/?authSource=admin`.)
+### From a GUI
+
+**MongoDB Compass** (free GUI, recommended for P3):
+1. Download from https://www.mongodb.com/products/compass
+2. Connect using URI: `mongodb://energy_admin:change-me-before-deploy@localhost:27017/?authSource=admin`
+3. Browse `energy_db` → all 11 collections + their indexes
+4. The URI is the same for all 3 modes (host port is always `27017`).
+
+> Kafka UI (port 8090) doesn't browse Mongo — it's only for Kafka topics + schemas.
 
 ---
 
