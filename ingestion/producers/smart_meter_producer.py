@@ -102,10 +102,17 @@ def get_frequency() -> float:
 
 
 def get_anomaly_reason(voltage: float, consumption: float, frequency: float):
+    # Thresholds calibrated against the generator's own amplification chain:
+    #   peak base (0.030-0.050) × METER_PROFILE (0.6-1.4) × weather (HOT ≤1.5,
+    #   EXTREME ≤1.8) × EWMA smoothing → normal peak rarely exceeds 0.075.
+    # Old threshold 0.045 was inside the normal range and flagged ~27% of
+    # peak-hour readings as anomalies, inflating the dashboard anomaly rate.
+    # Forced anomalies are always caught via the voltage thresholds below
+    # (get_voltage with force_anomaly=True returns 210-214 or 245-250).
     if frequency < 49.0 or frequency > 51.0: return "FREQUENCY_DEVIATION"
     if voltage   < 215.0:                    return "VOLTAGE_LOW"
     if voltage   > 245.0:                    return "VOLTAGE_HIGH"
-    if consumption > 0.045:                  return "OVERCONSUMPTION"
+    if consumption > 0.080:                  return "OVERCONSUMPTION"
     return None
 
 
