@@ -47,7 +47,7 @@ def start_meters_stream(spark: SparkSession):
         .start())
 
     # 3. FLUX B : PREPARATION DES AGREGATIONS (On garde l'objet 'window' intact)
-    meters_watermarked = parsed_meters.withWatermark("timestamp", "2 minutes")
+    meters_watermarked = parsed_meters.withWatermark("timestamp", "17 minutes")     #2min---17min
     
     windowed_meters = (meters_watermarked
         .groupBy(window(col("timestamp"), "15 minutes"), col("zone"))
