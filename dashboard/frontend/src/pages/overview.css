@@ -1,0 +1,159 @@
+/* =========================================================
+   Overview Dashboard — dark theme styles
+   Import dans index.css ou dans Overview.tsx via import "./overview.css"
+   ========================================================= */
+
+/* ROOT */
+.overview-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  min-height: 100vh;
+  background: #0e0e14;
+  color: #e2e2e8;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* HEADER */
+.ov-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ov-title  { font-size: 22px; font-weight: 500; color: #fff; }
+.ov-sub    { font-size: 13px; color: #9999b0; margin-top: 2px; }
+.ov-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ov-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(124,106,247,0.12);
+  color: #a78bfa;
+  border: 0.5px solid rgba(124,106,247,0.3);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 12px;
+}
+.pulse-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #4ade80;
+  animation: pulse 2s infinite;
+  display: inline-block;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+/* KPI GRID */
+.ov-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+@media (max-width: 1100px) { .ov-kpi-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px)  { .ov-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.ov-kpi-card {
+  background: #13131c;
+  border: 0.5px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 16px;
+  transition: border-color 0.2s;
+}
+.ov-kpi-card:hover { border-color: rgba(124,106,247,0.3); }
+.ov-kpi-card.ov-kpi-danger { border-color: rgba(248,113,113,0.25); }
+
+.ov-kpi-icon {
+  width: 34px; height: 34px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 12px;
+}
+.ov-kpi-label { font-size: 11px; color: #9999b0; margin-bottom: 4px; }
+.ov-kpi-value { font-size: 22px; font-weight: 500; color: #fff; }
+.ov-kpi-delta { font-size: 11px; margin-top: 4px; }
+.delta-up   { color: #4ade80; }
+.delta-down { color: #f87171; }
+.ov-kpi-sub { font-size: 11px; color: #9999b0; margin-top: 4px; }
+
+/* PANELS */
+.ov-panel {
+  background: #13131c;
+  border: 0.5px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 16px;
+}
+.ov-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.ov-panel-title { font-size: 13px; font-weight: 500; color: #e2e2e8; }
+.ov-view-all    { font-size: 11px; color: #7c6af7; text-decoration: none; }
+.ov-view-all:hover { color: #a78bfa; }
+
+/* MID ROW */
+.ov-mid-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 900px) { .ov-mid-row { grid-template-columns: 1fr; } }
+.ov-panel-wide { /* no extra styles needed */ }
+
+/* ZONES */
+.ov-zones-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ov-zone-tile {
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.ov-heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.ov-legend-bar {
+  flex: 1; height: 6px; border-radius: 3px;
+  background: linear-gradient(to right, #1a1a3e, #7c6af7, #f59e0b, #ef4444);
+}
+.ov-legend-label { font-size: 10px; color: #9999b0; }
+
+/* BOTTOM ROW */
+.ov-bot-row {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 14px;
+}
+@media (max-width: 900px) { .ov-bot-row { grid-template-columns: 1fr; } }
+
+/* ALERTS */
+.ov-alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 0.5px solid rgba(255,255,255,0.05);
+}
+.ov-alert-item:last-child { border-bottom: none; }
+.ov-alert-icon {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.ov-alert-title { font-size: 12px; color: #e2e2e8; font-weight: 500; }
+.ov-alert-sub   { font-size: 11px; color: #9999b0; margin-top: 1px; }
+
+/* WORD CLOUD */
+.ov-word-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 6px 0;
+  min-height: 120px;
+}

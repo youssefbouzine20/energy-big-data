@@ -1,14 +1,12 @@
-import { Outlet } from "react-router-dom";
-import { Sidebar } from "@/components/Sidebar";
-import { Header } from "@/components/Header";
+import { Outlet } from 'react-router-dom';
+import { Sidebar } from './Sidebar';
 
 export function Layout() {
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
           <Outlet />
         </main>
       </div>

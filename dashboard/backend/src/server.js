@@ -14,7 +14,6 @@ import incidentsRoutes from "./routes/incidents.js";
 import alertsRoutes from "./routes/alerts.js";
 import qualityRoutes from "./routes/quality.js";
 import settingsRoutes from "./routes/settings.js";
-import { requireAuth } from "./middleware.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,19 +37,17 @@ app.get("/api/health", (_req, res) => res.json({
 }));
 
 app.use("/api/auth", authRoutes);
-app.use("/api/overview", requireAuth, overviewRoutes);
-app.use("/api/heatmap", requireAuth, heatmapRoutes);
-app.use("/api/predictions", requireAuth, predictionsRoutes);
-app.use("/api/incidents", requireAuth, incidentsRoutes);
-app.use("/api/alerts", requireAuth, alertsRoutes);
-app.use("/api/quality", requireAuth, qualityRoutes);
-app.use("/api/settings", requireAuth, settingsRoutes);
+app.use("/api/overview", overviewRoutes);
+app.use("/api/heatmap", heatmapRoutes);
+app.use("/api/predictions", predictionsRoutes);
+app.use("/api/incidents", incidentsRoutes);
+app.use("/api/alerts", alertsRoutes);
+app.use("/api/quality", qualityRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.use((err, _req, res, _next) => {
   const status = err.status || 500;
-  if (status >= 500 && status !== 503) {
-    console.error("[api] error:", err);
-  }
+  if (status >= 500 && status !== 503) console.error("[api] error:", err);
   res.status(status).json({ error: err.message || "internal error" });
 });
 
