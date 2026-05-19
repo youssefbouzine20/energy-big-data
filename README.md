@@ -350,24 +350,25 @@ Expected in each: `→ <topic>` lines printing every cadence interval. **If a pr
   docker exec spark-master-pseudo bash -c "rm -rf /tmp/spark-checkpoints/*"
   ```
 
-- [ ] **5.2** Submit (T8 — new terminal, pseudo example)
+- [ ] **5.2** Submit in **T8** (new terminal — Spark will occupy it for the entire demo)
   ```powershell
-  docker exec -d -e AGGREGATION_WINDOW="2 minutes" -e AGGREGATION_WATERMARK="1 minute" spark-master-pseudo bash -c "/opt/spark/bin/spark-submit --packages 'org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0' /workspace/processing/main.py > /tmp/spark_submit.log 2>&1"
+  docker exec -e SPARK_MASTER="spark://spark-master:7077" -e AGGREGATION_WINDOW="2 minutes" -e AGGREGATION_WATERMARK="1 minute" spark-master-pseudo /opt/spark/bin/spark-submit --master spark://spark-master:7077 --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 /workspace/processing/main.py
   ```
-  For distributed, replace `spark-master-pseudo` → `spark-master-dist`.
+  For distributed, replace `spark-master-pseudo` → `spark-master-dist`. The `spark://spark-master:7077` URL stays the same in both modes — it resolves internally on the docker network.
 
-  > The `-e AGGREGATION_WINDOW="2 minutes"` is the demo override so windows close in ~3 min instead of ~17. Production default is `15 minutes` (European energy market settlement interval, documented in `.env.example:86`).
+  > **Why `SPARK_MASTER` AND `--master`?** `processing/spark_session.py:30` reads the env var to set `SparkSession.builder.master(...)`. Without it, the app defaults to `local[*]` (driver-only, never registers with the cluster — Spark UI shows 0 Running Applications even though data flows). The `--master` flag on spark-submit is belt-and-suspenders so the launcher also knows the cluster URL.
+  >
+  > **Why `2 minutes`?** Demo override so windows close in ~3 min instead of ~17. Production default is `15 minutes` (European energy market settlement interval, documented in `.env.example:86`).
 
-- [ ] **5.3** Wait 60 s, verify boot
-  ```powershell
-  docker exec spark-master-pseudo tail -30 /tmp/spark_submit.log
+- [ ] **5.3** Watch T8 output until you see (~45–60 s):
   ```
-  Expected substring: `Tous les flux sont démarrés avec succès !` and **no** `ERROR MicroBatchExecution`.
-
-  If you see `Incomplete log file` — Phase 5.1 wasn't done. Kill the java process, repeat 5.1, redo 5.2.
+  Tous les flux sont démarrés avec succès !
+  En écoute continue sur Kafka...
+  ```
+  **No `ERROR MicroBatchExecution`.** If you see `Incomplete log file` — Phase 5.1 wasn't done. `Ctrl+C` in T8, redo 5.1, redo 5.2.
 
 - [ ] **5.4** Spark UI sanity
-  Open http://localhost:8080 → click the running app → **Streaming Queries** tab → **13 active queries**:
+  Open http://localhost:8080 → **Running Applications** must show **1 row** named `energy-streaming` with cores and memory in use. Click it → **Streaming Queries** tab → **13 active queries**:
   1. weather passthrough
   2. rss passthrough
   3. market passthrough
@@ -376,6 +377,8 @@ Expected in each: `→ <topic>` lines printing every cadence interval. **If a pr
   6. meters_raw
   7. meters_aggregated_15min
   8-13. data_quality × 6 (one per topic)
+
+  **If Running Applications shows 0:** the `SPARK_MASTER` env var didn't propagate. Re-run 5.2 — the `-e` flags must go between `docker exec` and the container name, not after.
 
 ### Phase 6 — Wait for windows + run ML [5 min]
 
@@ -545,7 +548,7 @@ docker compose -f docker/docker-compose.pseudo.yml --env-file .env down -v
 | Frontend won't load | Frontend died | Restart `npm run dev` in T10 |
 | Backend `EADDRINUSE :4000` | Old node still running | `Get-Process node \| Stop-Process -Force` |
 | `spark-submit` path mangling on Git Bash | Git Bash converts `/opt/...` to Windows paths | **Use PowerShell, not Git Bash.** Or prefix `MSYS_NO_PATHCONV=1` |
-| Spark Master UI shows 0 apps but data IS flowing | Spark in local (in-driver) mode — normal | Not a bug; scheduling is in-driver, not cluster |
+| Spark Master UI shows 0 Running Applications | `SPARK_MASTER` env var not passed on `docker exec` (app ran in `local[*]` default) | Re-run Phase 5.2 with both `-e SPARK_MASTER="spark://spark-master:7077"` AND `--master spark://spark-master:7077`. The `-e` flag must come BEFORE the container name |
 | Data Quality cards show 0% or >100% | `EXPECTED_PER_15MIN` mismatch with producer cadence | Adjust constants in `processing/data_quality.py` lines 30-37 |
 | Dashboard 401 everywhere | Cookie expired | Log in again at :5173 |
 | Dashboard 500 on a page | Backend crashed | `Ctrl+C` T9, `npm run dev` again |
