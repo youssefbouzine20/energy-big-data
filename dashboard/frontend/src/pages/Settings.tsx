@@ -1,116 +1,153 @@
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useAuth } from "@/lib/auth";
-import { api, ApiError } from "@/lib/api";
+import { useState, useEffect } from 'react';
+import { Header } from '../components/Header';
+import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { DemoBanner } from '../components/DemoBanner';
 
-type RetentionItem = { collection: string; ttl_days: number; reason: string };
-type CollectionStat = { name: string; estimated_count: number | null };
-
-export function SettingsPage() {
+export function Settings() {
   const { user } = useAuth();
-  const [retention, setRetention] = useState<RetentionItem[] | null>(null);
-  const [system, setSystem] = useState<{ db_name: string; collections: CollectionStat[] } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [retention, setRetention] = useState<any[]>([]);
+  const [system, setSystem]       = useState<any>(null);
+  const [usingDemo, setUsingDemo] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
     const load = async () => {
       try {
         const [r, s] = await Promise.all([
-          api.get<{ items: RetentionItem[] }>("/api/settings/retention"),
-          api.get<{ db_name: string; collections: CollectionStat[] }>("/api/settings/system"),
+          api.get<any>('/api/settings/retention').catch(() => null),
+          api.get<any>('/api/settings/system').catch(() => null),
         ]);
-        if (!cancelled) { setRetention(r.items); setSystem(s); setError(null); }
-      } catch (err) {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : "failed to load settings");
-      }
+        const items = r?.items ?? r?.policies ?? [];
+        const countsByName: Record<string, number> = {};
+        for (const c of s?.collections ?? []) {
+          countsByName[c.name] = c.estimated_count ?? 0;
+        }
+        if (items.length) {
+          setRetention(items.map((p: any) => ({
+            ...p,
+            record_count: p.record_count ?? countsByName[p.collection] ?? 0,
+          })));
+          setUsingDemo(false);
+        } else {
+          setUsingDemo(true);
+        }
+        setSystem(s);
+      } catch { setUsingDemo(true); }
     };
     load();
   }, []);
 
+  const DEMO_RETENTION = [
+    { collection: 'meters_aggregated_15min', ttl_days: 90,  record_count: 142300 },
+    { collection: 'incidents_enriched',       ttl_days: 365, record_count: 8920   },
+    { collection: 'ml_predictions',           ttl_days: 30,  record_count: 34560  },
+    { collection: 'feedback_nlp',             ttl_days: 180, record_count: 2100   },
+    { collection: 'data_quality_metrics',     ttl_days: 60,  record_count: 500    },
+    { collection: 'dashboard_alerts',         ttl_days: 365, record_count: 89     },
+  ];
+
+  const displayRetention = retention.length ? retention : DEMO_RETENTION;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
-        <p className="text-sm text-muted-foreground">User profile, retention policies, system health</p>
-      </div>
+    <div style={{ animation: 'fade-in 0.4s ease-out both' }}>
+      <Header title="Settings" subtitle="System configuration and retention policies" />
+      <div style={{ paddingTop: 24 }}>
 
-      {error && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
+        {usingDemo && <DemoBanner sources={['/api/settings/retention']} message="Retention policies show demonstration data" />}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
+          {/* Retention policies */}
+          <div className="card-atonist" style={{ padding: '20px' }}>
+            <h3 style={{ fontFamily: 'Space Grotesk', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 16px' }}>
+              TTL Retention Policies
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {displayRetention.map((p: any) => (
+                <div key={p.collection} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '10px 14px', background: 'var(--bg-input)',
+                  borderRadius: 8, border: '1px solid var(--border-default)',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-secondary)', marginBottom: 2 }}>
+                      {p.collection}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {(p.record_count ?? 0).toLocaleString()} records
+                    </div>
+                  </div>
+                  <div style={{
+                    background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.25)',
+                    borderRadius: 6, padding: '4px 10px',
+                    fontSize: 12, fontWeight: 600, color: 'var(--accent-purple-light)',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {p.ttl_days}d TTL
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* System info + account */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* System */}
+            <div className="card-atonist" style={{ padding: '20px' }}>
+              <h3 style={{ fontFamily: 'Space Grotesk', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 14px' }}>
+                System Info
+              </h3>
+              {[
+                { label: 'Backend Port',  value: system?.port ?? 4000 },
+                { label: 'Frontend Port', value: 5173 },
+                { label: 'Refresh Rate',  value: '30s' },
+                { label: 'Auth Method',   value: 'JWT (httpOnly cookie)' },
+                { label: 'DB Driver',     value: 'MongoDB official driver' },
+                { label: 'Stack',         value: 'React + Vite + Express' },
+              ].map(({ label, value }) => (
+                <div key={label} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 0', borderBottom: '1px solid var(--border-default)',
+                  fontSize: 13,
+                }}>
+                  <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+                  <span style={{ color: 'var(--text-primary)', fontFamily: typeof value === 'number' ? 'monospace' : undefined }}>
+                    {String(value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Account */}
+            <div className="card-atonist" style={{ padding: '20px' }}>
+              <h3 style={{ fontFamily: 'Space Grotesk', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 14px' }}>
+                Account
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--accent-purple), var(--accent-gold))',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 18, fontWeight: 700, color: '#fff',
+                }}>
+                  {user?.username?.[0]?.toUpperCase() ?? 'U'}
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>{user?.username ?? 'user'}</div>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, marginTop: 2, textTransform: 'capitalize',
+                    color: user?.role === 'admin' ? 'var(--accent-purple-light)' : 'var(--accent-gold)',
+                    background: user?.role === 'admin' ? 'rgba(124,58,237,0.12)' : 'rgba(245,158,11,0.12)',
+                    padding: '2px 8px', borderRadius: 4, display: 'inline-block',
+                  }}>
+                    {user?.role ?? 'operator'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Profile</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1 text-sm">
-          <div>Username: <span className="font-medium">{user?.username}</span></div>
-          <div>Role: <span className="font-medium">{user?.role}</span></div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>GDPR retention policies</CardTitle>
-          <CardDescription>TTL indexes enforced at the database layer (see ethics/GDPR.md)</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {!retention ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Collection</TableHead>
-                  <TableHead>TTL (days)</TableHead>
-                  <TableHead>Reason</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {retention.map(r => (
-                  <TableRow key={r.collection}>
-                    <TableCell className="font-mono text-xs">{r.collection}</TableCell>
-                    <TableCell>{r.ttl_days}</TableCell>
-                    <TableCell className="text-xs">{r.reason}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>System status</CardTitle>
-          <CardDescription>Collections in <code>{system?.db_name || "energy_db"}</code></CardDescription>
-        </CardHeader>
-        <CardContent>
-          {!system ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Collection</TableHead>
-                  <TableHead>Estimated docs</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {system.collections.map(c => (
-                  <TableRow key={c.name}>
-                    <TableCell className="font-mono text-xs">{c.name}</TableCell>
-                    <TableCell>{c.estimated_count ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

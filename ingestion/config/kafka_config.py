@@ -42,10 +42,13 @@ PRODUCER_CONFIG = {
     "bootstrap.servers":  BOOTSTRAP_SERVERS,
     "client.id":          os.getenv("HOSTNAME", "energy-producer"),
     "acks":               "all",
-    "retries":            3,
+    "retries":            10,
     "retry.backoff.ms":   500,
     "linger.ms":          10,
-    "enable.idempotence": "true",
+    # Disabled: idempotent producers + retries=3 caused _OUT_OF_ORDER_SEQUENCE
+    # fatals on low-volume topics (incidents/rss/market/feedback). At-least-once
+    # is sufficient — Spark window aggregation absorbs duplicates.
+    "enable.idempotence": "false",
 }
 
 # ── Consumer config ───────────────────────────────────────────────────────────

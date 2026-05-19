@@ -14,10 +14,11 @@ router.get("/", async (_req, res, next) => {
           avg_kwh: { $avg: "$avg_consumption" },
           total_kwh: { $sum: "$total_consumption_kwh" },
           anomalies: { $sum: "$anomaly_count" },
+          meters:   { $max: "$meter_count" },
           lat: { $first: "$zone_lat" },
           lon: { $first: "$zone_lon" },
       } },
-      { $project: { _id: 0, zone: "$_id", avg_kwh: 1, total_kwh: 1, anomalies: 1, lat: 1, lon: 1 } },
+      { $project: { _id: 0, zone: "$_id", avg_kwh: 1, total_kwh: 1, anomalies: 1, meters: 1, lat: 1, lon: 1 } },
       { $sort: { zone: 1 } }
     ]).toArray();
     res.json({ items: rows, as_of: new Date().toISOString() });

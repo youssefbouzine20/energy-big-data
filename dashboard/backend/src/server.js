@@ -48,9 +48,7 @@ app.use("/api/settings", requireAuth, settingsRoutes);
 
 app.use((err, _req, res, _next) => {
   const status = err.status || 500;
-  if (status >= 500 && status !== 503) {
-    console.error("[api] error:", err);
-  }
+  if (status >= 500 && status !== 503) console.error("[api] error:", err);
   res.status(status).json({ error: err.message || "internal error" });
 });
 
