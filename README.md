@@ -176,6 +176,33 @@ $env:PYTHONIOENCODING="utf-8"
 
 The `PYTHONIOENCODING` is mandatory on Windows — without it, producers crash on the `→` character (cp1252 codec error).
 
+### 4.7 MongoDB Compass (for inspection + the prof demo)
+
+Download from https://www.mongodb.com/products/compass (free, official GUI).
+
+Save this connection (works as soon as a MongoDB container is up — `pseudo` / `local` / `distributed` all use the same port):
+
+```
+mongodb://energy_admin:change-me-before-deploy@localhost:27017/?authSource=admin
+```
+
+Name the favourite `energy-big-data`. Click **Connect** → database `energy_db` with 11 collections appears in the left sidebar.
+
+**Key views to bookmark for the defense (one click each during demo):**
+
+| Click path in Compass | What the prof sees | Question it answers (FR) |
+|---|---|---|
+| `meters_aggregated_15min` → **Documents** | Real 15-min aggregated windows, by zone | « Comment vous agrégez les données ? » |
+| `meters_aggregated_15min` → **Indexes** | Composite index `zone_1_window_start_-1` | « Les index sont-ils utilisés ? » |
+| `meters_aggregated_15min` → **Validation** | `$jsonSchema` definition | « Comment validez-vous les données ? » |
+| `dashboard_alerts` → **Documents** | Audit-trail entries with `triggered_at`, `alert_level`, `zone`, `model_name` | « Audit trail pour la conformité Section H ? » |
+| `ml_predictions` → **Documents** | Forecasts with `forecast_for`, `consumption_forecast`, `alert_level` | « Comment vous stockez les prédictions ? » |
+| Any collection → **Indexes** tab → look for TTL row | TTL indexes (90 / 365 / 730 days) on `timestamp` / `window_start` / `forecast_for` | « RGPD : durée de rétention par collection ? » |
+| `incidents_enriched` → **Documents** → expand `nlp_keywords` | Array of NLP-extracted keywords from VADER | « Comment vous extrayez les mots-clés ? » |
+| `feedback_nlp` → **Documents** → look at `sentiment_score` | VADER compound score [-1, 1] + label POSITIVE/NEGATIVE/NEUTRAL | « Analyse de sentiment ? » |
+
+> **Tip:** Compass remembers the last view per collection. Before the defense, open each of the 7 collections above once and click the tab you want shown — the next click during the demo lands directly on the right view.
+
 ---
 
 ## 5. Pick a deploy mode
@@ -415,7 +442,7 @@ For each page, check: **(a) loads without 500, (b) no yellow demo banner, (c) va
 | 2 | 30 s | 6 producer terminals tiled | Live `→ smart-meters` lines | "Six producteurs Python, un par source." |
 | 3 | 2 min | **Kafka UI :8090** | Brokers (1 alive) → Topics (6 + 2 internal) → `smart-meters` → Messages → expand a JSON. Then Schema Registry tab → 6 subjects | "smart-meters: 3 partitions pour paralléliser. Schema Registry en BACKWARD pour évolution sans rupture." |
 | 4 | 2 min | **Spark UI :8080** | Workers → running app → Streaming Queries (13 actives) | "13 requêtes : 7 traitement + 6 qualité par topic. Watermark 2 min, fenêtre 15 min en prod, 2 min en démo." |
-| 5 | 3 min | T1 → `python -m storage.healthcheck` | 11 collections, IXSCAN-only | "11 collections, validateurs `$jsonSchema`, index composé `zone + window_start`, TTL pour GDPR." |
+| 5 | 3 min | **MongoDB Compass** (see §4.7) — fallback: T1 → `python -m storage.healthcheck` | Click `meters_aggregated_15min` → Documents, Indexes, Validation tabs. Then `dashboard_alerts` for audit trail. Then `ml_predictions` for forecasts | "11 collections, validateurs `$jsonSchema`, index composé `zone + window_start`, TTL pour GDPR. IXSCAN partout, jamais COLLSCAN." |
 | 6 | 2 min | `ml/metrics.json` + dashboard `/predictions` | 3-model comparison + dashed forecast line | "Comparaison LinReg / RF / GradientBoosting. GB gagne R²=0.87, RMSE 0.0008, inférence ~3 µs/échantillon." |
 | 7 | 3 min | Dashboard **:5173** | Walk 7 pages: Overview → Heatmap → Predictions → Incidents → Alerts → Data Quality → Settings | "Dashboard React + Express, JWT cookie auth, rôles admin/operator." |
 | 8 | 1 min | `.env.example` + `docker/` + `/settings` GDPR table | 3 compose files + TTL retention | "Trois modes : local / pseudo / distribué (RF=3, ISR=2). TTL différenciés : 90j brut, 365j agrégats, 730j incidents (audit légal)." |
@@ -465,10 +492,13 @@ Run **30 min before the prof arrives**. Tick each:
 [ ] T9 backend: npm run dev → [api] listening on :4000
 [ ] T10 frontend: npm run dev → http://localhost:5173/
 [ ] Browser: log in admin/admin123 → click ALL 7 pages → no yellow banner anywhere
+[ ] MongoDB Compass: click Connect on saved 'energy-big-data' favourite → green dot, 11 collections visible
+[ ] Compass pre-flight: open meters_aggregated_15min (Documents tab), dashboard_alerts (Documents), ml_predictions (Documents) so the right tab is remembered for the live demo
 [ ] Open these tabs in advance:
     - http://localhost:8090   (Kafka UI)
     - http://localhost:8080   (Spark UI)
     - http://localhost:5173   (Dashboard)
+    - MongoDB Compass         (connected, energy_db expanded)
     - file ml/metrics.json    (in VS Code)
     - this README §7          (Q&A script)
 [ ] 3 deep breaths.
