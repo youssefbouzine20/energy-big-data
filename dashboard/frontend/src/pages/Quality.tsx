@@ -10,7 +10,6 @@ type Metric = {
   completeness_pct: number;
   noise_rate_pct: number;
   anomaly_rate_pct: number;
-  zone_balance_ratio: number;
   temporal_coverage_pct: number;
   alert: string | null;
 };
@@ -70,7 +69,6 @@ export function QualityPage() {
                   <Stat label="Completeness" value={`${formatNumber(latest.completeness_pct, 1)}%`} />
                   <Stat label="Noise rate" value={`${formatNumber(latest.noise_rate_pct, 2)}%`} />
                   <Stat label="Anomaly rate" value={`${formatNumber(latest.anomaly_rate_pct, 1)}%`} />
-                  <Stat label="Zone balance" value={formatNumber(latest.zone_balance_ratio, 2)} />
                   <Stat label="Temporal coverage" value={`${formatNumber(latest.temporal_coverage_pct, 0)}%`} />
                 </>
               ) : (

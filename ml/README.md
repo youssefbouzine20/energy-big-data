@@ -1,9 +1,19 @@
-# P5 — ML Models  (FULL WORKFLOW + WHAT TO BUILD)
+# P5 — ML Models  (✅ IMPLEMENTED — see `ml/run_pipeline.py`)
 
-> Owner: P5 teammate.
-> Reads from: MongoDB (`meters_raw`, `weather`, `incidents`, `market_prices`).
-> Writes to:  MongoDB (`ml_predictions`, `ml_evaluation`, `ml_data_quality`).
-> Used by:    P4 dashboard reads `ml_predictions` for the prediction-vs-actual chart and alerts.
+> **Status (2026-05-19): DONE.** The implementation lives in a single end-to-end script
+> [`ml/run_pipeline.py`](run_pipeline.py). Run it with `.venv\Scripts\python -m ml.run_pipeline`.
+> It compares 3 regression algorithms (LinearRegression, RandomForest, GradientBoosting),
+> writes the comparison table to [`ml/metrics.json`](metrics.json), generates 72 forecast
+> docs (4 zones × 6 future windows × 3 models) into `ml_predictions`, and audits
+> WARNING/CRITICAL forecasts into `dashboard_alerts`. The classification task described
+> below in §1 was **descoped** (regression alone is sufficient for Section D, and time
+> was short before defense). The rest of this README is preserved as the original
+> design/educational document.
+>
+> Owner: Youssef.
+> Reads from: MongoDB `meters_aggregated_15min`.
+> Writes to:  MongoDB `ml_predictions`, `dashboard_alerts`; disk `ml/metrics.json`.
+> Used by:    P4 dashboard `/predictions` and `/alerts` pages.
 
 ---
 

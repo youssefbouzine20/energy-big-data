@@ -34,7 +34,7 @@ git log --oneline -5
 | **P2** Spark Streaming | Marouan | ✅ Done — verified on all 3 modes | `processing/` |
 | **P3** MongoDB Storage | _(next reader)_ | 🟡 Partial — `init-mongo.js` covers 11 collections + indexes + TTL. **Missing the Python helpers** (see §4). | `storage/` |
 | **P4** React + Express Dashboard | _(next reader)_ | 🟡 Scaffolded — backend tested, frontend NOT `npm install`-verified. (see §6) | `dashboard/` |
-| **P5** ML Models | _(next reader)_ | 🔴 Not started — only the README. (see §5) | `ml/` |
+| **P5** ML Models | Youssef | ✅ Done — `ml/run_pipeline.py` trains 3 algos (LinReg / RF / GB), writes 72 predictions to `ml_predictions`, audits CRITICAL/WARNING forecasts to `dashboard_alerts`, persists `ml/metrics.json` for the Rapport. | `ml/` |
 
 Defense rubric (sections D/E/F/H of the spec) — what earns points:
 1. ✅ Tool justifications — covered in each role's README

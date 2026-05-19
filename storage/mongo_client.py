@@ -141,7 +141,9 @@ def get_client(role: str = "reader") -> MongoClient:
         # STEP 2c: Vérification de connexion immédiate (fail-fast)
         # Ping le serveur pour valider credentials et réseau dès l'import.
         _client_instance.admin.command("ping")
-        print(f"[mongo_client] Pool connecté à {uri.replace(f':{os.getenv('MONGO_PASSWORD', '***')}@', ':***@')} (role={role})")
+        _password_for_mask = os.getenv("MONGO_PASSWORD", "***")
+        _safe_uri = uri.replace(f":{_password_for_mask}@", ":***@")
+        print(f"[mongo_client] Pool connecté à {_safe_uri} (role={role})")
 
     return _client_instance
 
