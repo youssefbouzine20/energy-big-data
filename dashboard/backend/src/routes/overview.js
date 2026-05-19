@@ -33,7 +33,7 @@ router.get("/kpis", async (req, res) => {
           .countDocuments({ window_start: { $gte: startOfWeek } }),
         db.collection("ml_predictions").estimatedDocumentCount(),
         db.collection("dashboard_alerts")
-          .countDocuments({ acked: { $ne: true }, level: { $in: ["CRITICAL", "WARNING"] } }),
+          .countDocuments({ acked: { $ne: true }, alert_level: { $in: ["CRITICAL", "WARNING"] } }),
       ]);
 
     const totalConsumption = Math.round(consoCurrent[0]?.total ?? 0);

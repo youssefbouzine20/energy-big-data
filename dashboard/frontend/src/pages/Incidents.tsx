@@ -11,9 +11,9 @@ const DEMO_WORDS = [
   { word: 'maintenance', count: 60 },   { word: 'line failure', count: 55 },
   { word: 'fault', count: 40 },         { word: 'substation', count: 38 },
   { word: 'inspection', count: 32 },    { word: 'heating', count: 28 },
-  { word: 'repair', count: 26 },        { word: 'weatlee', count: 22 },
-  { word: 'breating', count: 20 },      { word: 'gonile', count: 18 },
-  { word: 'mainterance', count: 16 },   { word: 'fire', count: 14 },
+  { word: 'repair', count: 26 },        { word: 'weather', count: 22 },
+  { word: 'breaker', count: 20 },       { word: 'grounding', count: 18 },
+  { word: 'insulation', count: 16 },    { word: 'fire', count: 14 },
   { word: 'cable', count: 13 },         { word: 'grid', count: 12 },
   { word: 'outage', count: 11 },        { word: 'zone', count: 10 },
 ];

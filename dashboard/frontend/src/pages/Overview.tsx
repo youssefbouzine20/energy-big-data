@@ -103,15 +103,28 @@ export function Overview() {
         api.get<any>('/api/quality/latest').catch(() => null),
       ]);
       if (k) setKpis(k);
-      setAlerts(a?.alerts ?? []);
-      setWords(w?.words ?? []);
+      const aRaw = a?.items ?? a?.alerts ?? [];
+      const aItems = aRaw.map((x: any) => {
+        const lvl = (x.alert_level ?? x.level ?? 'INFO').toUpperCase();
+        const kwh = x.forecast_kwh ?? x.consumption_forecast;
+        return {
+          level: lvl,
+          message: x.message ?? `${lvl} forecast Zone ${x.zone ?? '?'}${kwh != null ? ` — ${Math.round(kwh*1000)/1000} kWh` : ''}`,
+          details: x.details ?? (x.model_name ? `Model: ${x.model_name}` : ''),
+          zone: x.zone,
+          triggered_at: x.triggered_at ?? x.forecast_for ?? new Date().toISOString(),
+        };
+      });
+      const wItems = w?.items ?? w?.words ?? [];
+      setAlerts(aItems);
+      setWords(wItems.map((x: any) => ({ word: x.text ?? x.word, count: x.value ?? x.count })));
       setHeatmap(h?.items ?? []);
       setQuality(q?.items ?? []);
       setUsingDemo(d => ({
         ...d,
         kpis: !k,
-        alerts: !a?.alerts?.length,
-        words: !w?.words?.length,
+        alerts: !aItems.length,
+        words: !wItems.length,
         heatmap: !h?.items?.length,
         quality: !q?.items?.length,
       }));

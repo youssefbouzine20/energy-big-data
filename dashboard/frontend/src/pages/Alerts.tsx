@@ -110,7 +110,7 @@ export function Alerts() {
         </div>
 
         {/* Active alerts banner */}
-        {(active.length > 0 || true) && (
+        {active.length > 0 && (
           <div className="card-atonist" style={{
             padding: '14px 20px', marginBottom: 20,
             background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)',
@@ -118,7 +118,7 @@ export function Alerts() {
           }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse-green 1.5s infinite' }} />
             <span style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>
-              {active.length || DEMO_ALERTS.filter(a => ['CRITICAL','WARNING'].includes(a.level)).length} active alert(s) require attention
+              {active.length} active alert(s) require attention
             </span>
           </div>
         )}
