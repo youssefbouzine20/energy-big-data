@@ -14,6 +14,7 @@ import incidentsRoutes from "./routes/incidents.js";
 import alertsRoutes from "./routes/alerts.js";
 import qualityRoutes from "./routes/quality.js";
 import settingsRoutes from "./routes/settings.js";
+import mlRoutes from "./routes/ml.js";
 import { requireAuth } from "./middleware.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,7 @@ app.use("/api/incidents", requireAuth, incidentsRoutes);
 app.use("/api/alerts", requireAuth, alertsRoutes);
 app.use("/api/quality", requireAuth, qualityRoutes);
 app.use("/api/settings", requireAuth, settingsRoutes);
+app.use("/api/ml", requireAuth, mlRoutes);
 
 app.use((err, _req, res, _next) => {
   const status = err.status || 500;
