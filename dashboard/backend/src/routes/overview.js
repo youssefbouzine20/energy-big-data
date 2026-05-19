@@ -3,49 +3,77 @@ import { getDb } from "../db.js";
 
 const router = Router();
 
-router.get("/kpis", async (_req, res, next) => {
+router.get("/kpis", async (req, res) => {
   try {
     const db = getDb();
     const now = new Date();
-    const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const last1h = new Date(now.getTime() - 60 * 60 * 1000);
+    const startOfMonth     = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const startOfWeek      = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
 
-    const [agg24h] = await db.collection("meters_aggregated_15min").aggregate([
-      { $match: { window_start: { $gte: last24h } } },
-      { $group: { _id: null, total: { $sum: "$total_consumption_kwh" } } }
-    ]).toArray();
+    const [consoCurrent, consoPrev, metersNow, metersPrev, sparkWindows, predictions, activeAlerts] =
+      await Promise.all([
+        db.collection("meters_aggregated_15min").aggregate([
+          { $match: { window_start: { $gte: startOfMonth } } },
+          { $group: { _id: null, total: { $sum: "$total_consumption_kwh" } } },
+        ]).toArray(),
+        db.collection("meters_aggregated_15min").aggregate([
+          { $match: { window_start: { $gte: startOfPrevMonth, $lt: startOfMonth } } },
+          { $group: { _id: null, total: { $sum: "$total_consumption_kwh" } } },
+        ]).toArray(),
+        db.collection("meters_raw").distinct("meter_id", {
+          timestamp: { $gte: startOfMonth },
+        }),
+        db.collection("meters_raw").distinct("meter_id", {
+          timestamp: { $gte: startOfPrevMonth, $lt: startOfMonth },
+        }),
+        db.collection("meters_aggregated_15min")
+          .countDocuments({ window_start: { $gte: startOfWeek } }),
+        db.collection("ml_predictions").estimatedDocumentCount(),
+        db.collection("dashboard_alerts")
+          .countDocuments({ acked: { $ne: true }, level: { $in: ["CRITICAL", "WARNING"] } }),
+      ]);
 
-    const anomalies1h = await db.collection("meters_raw").countDocuments({
-      timestamp: { $gte: last1h }, is_anomaly: true
-    });
-
-    const activeIncidents = await db.collection("incidents").countDocuments({ resolved: false });
-
-    const [voltage] = await db.collection("meters_aggregated_15min").aggregate([
-      { $match: { window_start: { $gte: last1h } } },
-      { $group: { _id: null, avg: { $avg: "$voltage_avg" } } }
-    ]).toArray();
+    const totalConsumption = Math.round(consoCurrent[0]?.total ?? 0);
+    const prevTotal        = Math.round(consoPrev[0]?.total ?? 1);
+    const consumptionDelta = prevTotal > 0
+      ? +((( totalConsumption - prevTotal) / prevTotal) * 100).toFixed(1)
+      : 0;
+    const metersDelta = metersPrev.length > 0
+      ? +((( metersNow.length - metersPrev.length) / metersPrev.length) * 100).toFixed(1)
+      : 0;
 
     res.json({
-      total_kwh_24h: agg24h?.total ?? 0,
-      anomalies_1h: anomalies1h,
-      active_incidents: activeIncidents,
-      avg_voltage: voltage?.avg ?? 0,
-      as_of: now.toISOString(),
+      totalConsumption,
+      consumptionDelta,
+      activeMeters: metersNow.length,
+      metersDelta,
+      sparkWindows,
+      predictions,
+      activeAlerts,
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error("[overview/kpis]", err);
+    res.status(500).json({ error: "Failed to fetch KPIs" });
+  }
 });
 
-router.get("/recent-windows", async (_req, res, next) => {
+router.get("/recent-windows", async (req, res) => {
   try {
-    const db = getDb();
-    const rows = await db.collection("meters_aggregated_15min")
-      .find({}, { projection: { _id: 0 } })
+    const db    = getDb();
+    const limit = Math.min(parseInt(req.query.limit ?? "24"), 96);
+    const docs  = await db.collection("meters_aggregated_15min")
+      .find({})
       .sort({ window_start: -1 })
-      .limit(24)
+      .limit(limit)
       .toArray();
-    res.json({ items: rows.reverse() });
-  } catch (err) { next(err); }
+    res.json(docs.reverse());
+  } catch (err) {
+    console.error("[overview/recent-windows]", err);
+    res.status(500).json({ error: "Failed to fetch windows" });
+  }
 });
 
 export default router;
