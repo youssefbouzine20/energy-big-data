@@ -368,7 +368,13 @@ Expected in each: `→ <topic>` lines printing every cadence interval. **If a pr
   **No `ERROR MicroBatchExecution`.** If you see `Incomplete log file` — Phase 5.1 wasn't done. `Ctrl+C` in T8, redo 5.1, redo 5.2.
 
 - [ ] **5.4** Spark UI sanity
-  Open http://localhost:8080 → **Running Applications** must show **1 row** named `energy-streaming` with cores and memory in use. Click it → **Streaming Queries** tab → **13 active queries**:
+  Open http://localhost:8080 → **Running Applications** must show **1 row**. Expected content (exact app name comes from `processing/main.py:17` → `build_session("energy-streaming-main")`):
+
+  | Application ID | Name | Cores | Memory per Executor | State |
+  |---|---|---|---|---|
+  | `app-YYYYMMDDHHMMSS-0000` | `energy-streaming-main` | 1 | 1024.0 MiB | **RUNNING** |
+
+  Click the application → **Streaming Queries** tab → **13 active queries**:
   1. weather passthrough
   2. rss passthrough
   3. market passthrough
