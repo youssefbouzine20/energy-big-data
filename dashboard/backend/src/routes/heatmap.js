@@ -6,7 +6,9 @@ const router = Router();
 router.get("/", async (_req, res, next) => {
   try {
     const db = getDb();
-    const since = new Date(Date.now() - 30 * 60 * 1000);
+    // Widened from 30 min to 6 h so the heatmap survives Spark restarts +
+    // demo gaps. 6h still represents recent enough activity for live monitoring.
+    const since = new Date(Date.now() - 6 * 60 * 60 * 1000);
     const rows = await db.collection("meters_aggregated_15min").aggregate([
       { $match: { window_start: { $gte: since } } },
       { $group: {

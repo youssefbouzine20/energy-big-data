@@ -6,13 +6,16 @@ const router = Router();
 router.get("/active", async (_req, res, next) => {
   try {
     const db = getDb();
-    const now = new Date();
+    // "Active" = forecasts within the recent window (last 6h) or the future.
+    // ml.run_pipeline writes forecasts at a moment in time; if it ran 30 min ago,
+    // strictly-future filter wipes everything. Widen to ±6h so alerts stay visible.
+    const since = new Date(Date.now() - 6 * 60 * 60 * 1000);
     const rows = await db.collection("ml_predictions")
       .find(
-        { forecast_for: { $gte: now }, alert_level: { $in: ["WARNING", "CRITICAL"] } },
+        { forecast_for: { $gte: since }, alert_level: { $in: ["WARNING", "CRITICAL"] } },
         { projection: { _id: 0 } }
       )
-      .sort({ forecast_for: 1 })
+      .sort({ forecast_for: -1 })
       .limit(20)
       .toArray();
     res.json({ items: rows });
