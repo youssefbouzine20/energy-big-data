@@ -28,7 +28,13 @@ const TOPIC_ORDER = [
   'rss-feeds', 'market-prices', 'user-feedback',
 ];
 
-function getGrade(pct: number) {
+function getGrade(m: Metric | null) {
+  if (!m) return { label: 'Waiting…', color: '#94a3b8' };
+  // Alert from the Spark data_quality stream is the authoritative signal.
+  // A 100% completeness with low temporal coverage still means missing data.
+  if (m.alert?.startsWith('CRIT')) return { label: 'Issues',  color: '#ef4444' };
+  if (m.alert?.startsWith('WARN')) return { label: 'Warning', color: '#f59e0b' };
+  const pct = m.completeness_pct;
   if (pct >= 95) return { label: 'Excellent', color: '#22c55e' };
   if (pct >= 80) return { label: 'Good',      color: '#f59e0b' };
   if (pct >= 60) return { label: 'Fair',      color: '#f97316' };
@@ -82,13 +88,16 @@ export function Quality() {
             const meta = TOPIC_META[it.topic] ?? { label: it.topic, icon: '📦' };
             const m = it.latest;
             const pct = m?.completeness_pct ?? 0;
-            const { label, color } = getGrade(pct);
+            const { label, color } = getGrade(m);
+            // Cap displayed coverage at 100 — values >100 indicate the EXPECTED_PER_15MIN
+            // baseline in processing/data_quality.py is slightly low for this topic, not a real surplus.
+            const coverage = m ? Math.min(100, m.temporal_coverage_pct) : 0;
             return (
               <div key={it.topic} className="card-atonist" style={{ padding: '18px 20px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                   <div style={{ fontSize: 20 }}>{meta.icon}</div>
                   <span style={{ fontSize: 10, fontWeight: 600, color, background: `${color}18`, padding: '3px 8px', borderRadius: 4 }}>
-                    {m ? label : 'Waiting…'}
+                    {label}
                   </span>
                 </div>
                 <div style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-muted)', marginBottom: 6 }}>{it.topic}</div>
@@ -100,7 +109,7 @@ export function Quality() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
                   <span>noise {m ? `${m.noise_rate_pct.toFixed(1)}%` : '—'}</span>
-                  <span>coverage {m ? `${m.temporal_coverage_pct.toFixed(0)}%` : '—'}</span>
+                  <span>coverage {m ? `${coverage.toFixed(0)}%` : '—'}</span>
                 </div>
                 {m?.alert && (
                   <div style={{ marginTop: 8, fontSize: 11, color: m.alert.startsWith('CRIT') ? '#dc2626' : '#d97706' }}>

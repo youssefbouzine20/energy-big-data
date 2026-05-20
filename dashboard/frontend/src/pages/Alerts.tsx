@@ -22,11 +22,12 @@ const DEMO_ALERTS = [
 function normalizeAlert(x: any) {
   const zone = x.zone ?? '?';
   const level = (x.alert_level ?? x.level ?? 'INFO').toUpperCase();
-  const kwh = x.forecast_kwh ?? x.consumption_forecast;
+  const kwhRaw = x.forecast_kwh ?? x.consumption_forecast;
+  const kwhStr = typeof kwhRaw === 'number' ? kwhRaw.toFixed(4) : null;
   return {
     _id: x._id ?? x.incident_id ?? `${zone}-${x.triggered_at ?? x.forecast_for ?? Math.random()}`,
     level,
-    message: x.message ?? `${level} forecast Zone ${zone}${kwh ? ` — ${Math.round(kwh)} kWh` : ''}`,
+    message: x.message ?? `${level} forecast Zone ${zone}${kwhStr ? ` — ${kwhStr} kWh` : ''}`,
     details: x.details ?? (x.model_name ? `Model: ${x.model_name}` : ''),
     zone,
     triggered_at: x.triggered_at ?? x.forecast_for ?? new Date().toISOString(),
@@ -75,7 +76,8 @@ export function Alerts() {
 
   const allHistory = history.length ? history : DEMO_ALERTS;
   const filtered   = filter === 'ALL' ? allHistory : allHistory.filter(a => a.level === filter);
-  const counts     = Object.fromEntries(Object.keys(LEVEL_CONFIG).map(k => [k, allHistory.filter(a => a.level === k).length]));
+  // Counts reflect ACTIVE alerts so the KPI cards match the "X active alert(s)" banner below.
+  const counts     = Object.fromEntries(Object.keys(LEVEL_CONFIG).map(k => [k, active.filter(a => a.level === k).length]));
 
   return (
     <div style={{ animation: 'fade-in 0.4s ease-out both' }}>
